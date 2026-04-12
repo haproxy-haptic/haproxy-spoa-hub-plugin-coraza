@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haproxy-hub
+  namespace: e2e-coraza
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: haproxy-hub
+  template:
+    metadata:
+      labels:
+        app: haproxy-hub
+    spec:
+      containers:
+        - name: haproxy
+          image: haproxytech/haproxy-debian:3.3
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: haproxy-config
+              mountPath: /usr/local/etc/haproxy/haproxy.cfg
+              subPath: haproxy.cfg
+            - name: haproxy-config
+              mountPath: /etc/haproxy/spoe-coraza.conf
+              subPath: spoe-coraza.conf
+            - name: spoe-sock
+              mountPath: /var/run/spoe
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 2
+
+        - name: hub
+          image: e2e-hub:latest
+          imagePullPolicy: Never
+          args: ["--config", "/config/config.toml"]
+          volumeMounts:
+            - name: hub-config
+              mountPath: /config
+              readOnly: true
+            - name: spoe-sock
+              mountPath: /var/run/spoe
+
+      volumes:
+        - name: haproxy-config
+          configMap:
+            name: haproxy-config
+        - name: hub-config
+          configMap:
+            name: hub-config
+        - name: spoe-sock
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haproxy-hub
+  namespace: e2e-coraza
+spec:
+  type: NodePort
+  selector:
+    app: haproxy-hub
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080

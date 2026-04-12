@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haproxy-config
+  namespace: e2e-coraza
+data:
+  haproxy.cfg: |
+    global
+        log stdout format raw local0 info
+
+    defaults
+        log global
+        mode http
+        timeout connect 5s
+        timeout client 30s
+        timeout server 30s
+        option httplog
+
+    frontend web
+        bind :8080
+        filter spoe engine coraza-waf config /etc/haproxy/spoe-coraza.conf
+
+        http-request deny deny_status 403 if { var(txn.hub.coraza.action) -m str deny }
+        http-request redirect location %[var(txn.hub.coraza.data)] if { var(txn.hub.coraza.action) -m str redirect }
+
+        default_backend app
+
+    backend spoa-hub-backend
+        mode tcp
+        server hub unix@/var/run/spoe/hub.sock
+
+    backend app
+        server backend1 backend:80
+
+  spoe-coraza.conf: |
+    [coraza-waf]
+    spoe-agent coraza_agent
+        messages check-request
+        option var-prefix hub
+        use-backend spoa-hub-backend
+        timeout hello      2s
+        timeout idle       5m
+        timeout processing 1s
+
+    spoe-message check-request
+        args src-ip=src src-port=src_port dst-ip=dst dst-port=dst_port method=method path=path query=query version=req.ver headers=req.hdrs body=req.body
+        event on-frontend-http-request
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hub-config
+  namespace: e2e-coraza
+data:
+  config.toml: |
+    plugin_dir = "/etc/haproxy-spoa-hub/plugins"
+    default_timeout_ms = 1000
+    log_level = "debug"
+
+    [[listeners]]
+    type = "unix"
+    address = "/var/run/spoe/hub.sock"
+
+    [[plugins]]
+    name = "coraza"
+    library = "libcoraza_plugin.so"
+    messages = ["check-request"]
+    timeout_ms = 1000
+
+    [plugins.params]
+    directives = """
+    SecRuleEngine On
+    Include @coraza.conf-recommended
+    Include @crs-setup.conf.example
+    Include @owasp_crs/*.conf
+    """
+    request_body_limit = 131072
+    request_body_in_memory_limit = 131072
+    response_body_limit = 131072

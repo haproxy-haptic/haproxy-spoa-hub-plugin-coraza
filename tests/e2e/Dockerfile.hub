@@ -1,0 +1,17 @@
+# Single builder stage: Go + Rust together (build.rs invokes go build)
+FROM rust:1.86-bookworm AS builder
+
+# Install Go 1.26
+COPY --from=golang:1.26-bookworm /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:$PATH"
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY src/ ./src/
+COPY go/ ./go/
+COPY benches/ ./benches/
+RUN cargo build --release
+
+# Final image with hub + plugin
+FROM registry.gitlab.com/haproxy-haptic/haproxy-spoa-hub:latest
+COPY --from=builder /build/target/release/libcoraza_plugin.so /etc/haproxy-spoa-hub/plugins/
