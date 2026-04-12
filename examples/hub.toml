@@ -1,0 +1,30 @@
+plugin_dir = "/opt/spoa-plugins"
+default_timeout_ms = 15
+log_level = "info"
+
+[[listeners]]
+type = "unix"
+address = "/var/run/haproxy-spoa-hub.sock"
+
+[[plugins]]
+name = "coraza"
+library = "libcoraza_plugin.so"
+messages = ["check-request"]
+timeout_ms = 15
+
+[plugins.params]
+directives = """
+SecRuleEngine On
+Include @coraza.conf-recommended
+Include @crs-setup.conf.example
+Include @owasp_crs/*.conf
+"""
+request_body_limit = 131072
+request_body_in_memory_limit = 131072
+response_body_limit = 131072
+
+# Uncomment to enable response inspection.
+# Also add "check-response" to the messages list above.
+# response_check = true
+# detect_only = false
+# transaction_ttl_ms = 10000
