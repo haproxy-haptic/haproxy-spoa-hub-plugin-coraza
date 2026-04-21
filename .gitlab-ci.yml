@@ -154,19 +154,29 @@ build:
   parallel:
     matrix:
       - ARCH: amd64
-        RUST_TARGET: x86_64-unknown-linux-gnu
-        CROSS_PKG: ""
-        CROSS_LINKER: ""
       - ARCH: arm64
-        RUST_TARGET: aarch64-unknown-linux-gnu
-        CROSS_PKG: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
-        CROSS_LINKER: aarch64-linux-gnu-gcc
       - ARCH: armv7
-        RUST_TARGET: armv7-unknown-linux-gnueabihf
-        CROSS_PKG: "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf"
-        CROSS_LINKER: arm-linux-gnueabihf-gcc
   before_script:
     - !reference [.install-go, before_script]
+    - |
+      case "${ARCH}" in
+        amd64)
+          RUST_TARGET="x86_64-unknown-linux-gnu"
+          CROSS_PKG=""
+          CROSS_LINKER=""
+          ;;
+        arm64)
+          RUST_TARGET="aarch64-unknown-linux-gnu"
+          CROSS_PKG="gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
+          CROSS_LINKER="aarch64-linux-gnu-gcc"
+          ;;
+        armv7)
+          RUST_TARGET="armv7-unknown-linux-gnueabihf"
+          CROSS_PKG="gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf"
+          CROSS_LINKER="arm-linux-gnueabihf-gcc"
+          ;;
+      esac
+    - export RUST_TARGET
     - rustup target add "${RUST_TARGET}"
     - |
       if [ -n "${CROSS_PKG}" ]; then
@@ -241,15 +251,15 @@ release:
       awk -v ver="${VERSION}" '
         /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1 }
         found { print }
-      ' CHANGELOG.md > /tmp/release-notes.md
-      if [ ! -s /tmp/release-notes.md ]; then
-        echo "Release ${CI_COMMIT_TAG}" > /tmp/release-notes.md
+      ' CHANGELOG.md > release-notes.md
+      if [ ! -s release-notes.md ]; then
+        echo "Release ${CI_COMMIT_TAG}" > release-notes.md
       fi
-      cat /tmp/release-notes.md
+      cat release-notes.md
   release:
     tag_name: $CI_COMMIT_TAG
     name: "$CI_COMMIT_TAG"
-    description: /tmp/release-notes.md
+    description: ./release-notes.md
     assets:
       links:
         - name: "${LIB_NAME}-amd64-glibc${GLIBC_VERSION}.so"
