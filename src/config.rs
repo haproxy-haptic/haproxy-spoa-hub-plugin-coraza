@@ -1,5 +1,4 @@
-use abi_stable::std_types::{RHashMap, RString, Tuple2};
-use haproxy_spoa_hub_plugin_api::{ConfigValue, PluginContext};
+use haproxy_spoa_hub_plugin_api::{ConfigValue, PluginContext, RHashMap, RString, Tuple2};
 
 /// WAF directives and body limit fields shared between the top-level
 /// plugin config and per-application configs.
@@ -107,27 +106,23 @@ impl PluginConfig {
         let waf = parse_waf_fields(&context.config, &defaults);
 
         let response_check = context
-            .config
-            .get("response_check")
+            .get_config("response_check")
             .and_then(|v| v.as_bool())
             .unwrap_or(defaults.response_check);
 
         let detect_only = context
-            .config
-            .get("detect_only")
+            .get_config("detect_only")
             .and_then(|v| v.as_bool())
             .unwrap_or(defaults.detect_only);
 
         let transaction_ttl_ms = context
-            .config
-            .get("transaction_ttl_ms")
+            .get_config("transaction_ttl_ms")
             .and_then(|v| v.as_integer())
             .map(|n| n as i32)
             .unwrap_or(defaults.transaction_ttl_ms);
 
         let applications = context
-            .config
-            .get("applications")
+            .get_config("applications")
             .and_then(|v| v.as_table())
             .map(|table| {
                 table
