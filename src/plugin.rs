@@ -1,9 +1,8 @@
 use std::ffi::{CStr, c_int};
 use std::sync::OnceLock;
 
-use abi_stable::std_types::{RString, RVec, Tuple2};
 use haproxy_spoa_hub_plugin_api::{
-    ProcessingResult, SpoeMessage, SpoeValue, TxnVariable, VarScope, define_plugin,
+    ProcessingResult, RString, RVec, SpoeMessage, SpoeValue, TxnVariable, define_plugin,
 };
 
 use crate::config::PluginConfig;
@@ -91,9 +90,7 @@ define_plugin!(CorazaPlugin, {
         match message.name.as_str() {
             "check-request" => process_request(message, config, waf_handle),
             "check-response" => process_response(message, config),
-            _ => Ok(ProcessingResult {
-                variables: RVec::new(),
-            }),
+            _ => Ok(ProcessingResult::empty()),
         }
     }
 
@@ -128,97 +125,33 @@ fn process_request(
     config: &PluginConfig,
     waf_handle: u64,
 ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
-    let mut src_ip = String::new();
-    let mut src_port: i32 = 0;
-    let mut dst_ip = String::new();
-    let mut dst_port: i32 = 0;
-    let mut method = String::new();
-    let mut path = String::new();
-    let mut query = String::new();
-    let mut version = String::new();
-    let mut headers_buf: Vec<u8> = Vec::new();
-    let mut body_buf: Vec<u8> = Vec::new();
-    let mut app_name: Option<String> = None;
+    let src_ip = message.get_string("src-ip").unwrap_or("");
+    let src_port = message.get_int("src-port").unwrap_or(0) as i32;
+    let dst_ip = message.get_string("dst-ip").unwrap_or("");
+    let dst_port = message.get_int("dst-port").unwrap_or(0) as i32;
+    let method = message.get_string("method").unwrap_or("");
+    let path = message.get_string("path").unwrap_or("");
+    let query = message.get_string("query").unwrap_or("");
+    let version = message.get_string("version").unwrap_or("");
+    let app_name = message.get_string("app");
 
-    // Extract SPOE message arguments
-    for Tuple2(k, v) in message.args.iter() {
-        match k.as_str() {
-            "src-ip" => {
-                if let SpoeValue::String(s) = v {
-                    src_ip = s.to_string();
-                }
-            }
-            "src-port" => {
-                src_port = extract_int(v);
-            }
-            "dst-ip" => {
-                if let SpoeValue::String(s) = v {
-                    dst_ip = s.to_string();
-                }
-            }
-            "dst-port" => {
-                dst_port = extract_int(v);
-            }
-            "method" => {
-                if let SpoeValue::String(s) = v {
-                    method = s.to_string();
-                }
-            }
-            "path" => {
-                if let SpoeValue::String(s) = v {
-                    path = s.to_string();
-                }
-            }
-            "query" => {
-                if let SpoeValue::String(s) = v {
-                    query = s.to_string();
-                }
-            }
-            "version" => {
-                if let SpoeValue::String(s) = v {
-                    version = s.to_string();
-                }
-            }
-            "headers" => match v {
-                SpoeValue::Binary(b) => {
-                    headers_buf = parse_haproxy_headers(b.as_slice());
-                }
-                SpoeValue::String(s) => {
-                    headers_buf = parse_haproxy_headers(s.as_bytes());
-                }
-                _ => {}
-            },
-            "body" => match v {
-                SpoeValue::Binary(b) => {
-                    body_buf = b.to_vec();
-                }
-                SpoeValue::String(s) => {
-                    body_buf = s.as_bytes().to_vec();
-                }
-                _ => {}
-            },
-            "app" => {
-                if let SpoeValue::String(s) = v {
-                    app_name = Some(s.to_string());
-                }
-            }
-            _ => {}
-        }
-    }
+    // headers and body can arrive as either Binary or String
+    let headers_buf = extract_bytes_as_headers(message.get("headers"));
+    let body_buf = extract_bytes(message.get("body"));
 
     // Generate transaction ID
     let tx_id = format!("{}-{}", message.stream_id, message.frame_id);
 
     // Convert to C strings
     let tx_id_c = to_cstring(&tx_id);
-    let src_ip_c = to_cstring(&src_ip);
-    let dst_ip_c = to_cstring(&dst_ip);
-    let method_c = to_cstring(&method);
-    let path_c = to_cstring(&path);
-    let query_c = to_cstring(&query);
-    let version_c = to_cstring(&version);
+    let src_ip_c = to_cstring(src_ip);
+    let dst_ip_c = to_cstring(dst_ip);
+    let method_c = to_cstring(method);
+    let path_c = to_cstring(path);
+    let query_c = to_cstring(query);
+    let version_c = to_cstring(version);
 
-    let app_name_c = app_name.as_ref().map(|s| to_cstring(s));
+    let app_name_c = app_name.map(to_cstring);
     let app_name_ptr = app_name_c
         .as_ref()
         .map(|c| c.as_ptr())
@@ -266,62 +199,22 @@ fn process_response(
     config: &PluginConfig,
 ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
     if !config.response_check {
-        return Ok(ProcessingResult {
-            variables: RVec::new(),
-        });
+        return Ok(ProcessingResult::empty());
     }
 
-    let mut tx_id = String::new();
-    let mut status_code: i32 = 0;
-    let mut version = String::new();
-    let mut headers_buf: Vec<u8> = Vec::new();
-    let mut body_buf: Vec<u8> = Vec::new();
-    let mut detect_only = config.detect_only;
+    let tx_id = message.get_string("id").unwrap_or("");
+    let status_code = message.get_int("status").unwrap_or(0) as i32;
+    let version = message.get_string("version").unwrap_or("");
+    let detect_only = message
+        .get_bool("detect-only")
+        .unwrap_or(config.detect_only);
 
-    for Tuple2(k, v) in message.args.iter() {
-        match k.as_str() {
-            "id" => {
-                if let SpoeValue::String(s) = v {
-                    tx_id = s.to_string();
-                }
-            }
-            "status" => {
-                status_code = extract_int(v);
-            }
-            "version" => {
-                if let SpoeValue::String(s) = v {
-                    version = s.to_string();
-                }
-            }
-            "headers" => match v {
-                SpoeValue::Binary(b) => {
-                    headers_buf = parse_haproxy_headers(b.as_slice());
-                }
-                SpoeValue::String(s) => {
-                    headers_buf = parse_haproxy_headers(s.as_bytes());
-                }
-                _ => {}
-            },
-            "body" => match v {
-                SpoeValue::Binary(b) => {
-                    body_buf = b.to_vec();
-                }
-                SpoeValue::String(s) => {
-                    body_buf = s.as_bytes().to_vec();
-                }
-                _ => {}
-            },
-            "detect-only" => {
-                if let SpoeValue::Bool(b) = v {
-                    detect_only = *b;
-                }
-            }
-            _ => {}
-        }
-    }
+    // headers and body can arrive as either Binary or String
+    let headers_buf = extract_bytes_as_headers(message.get("headers"));
+    let body_buf = extract_bytes(message.get("body"));
 
-    let tx_id_c = to_cstring(&tx_id);
-    let version_c = to_cstring(&version);
+    let tx_id_c = to_cstring(tx_id);
+    let version_c = to_cstring(version);
     let detect_only_flag = if detect_only { 1 } else { 0 };
 
     let result = unsafe {
@@ -337,7 +230,7 @@ fn process_response(
         )
     };
 
-    let variables = result_to_variables(&result, &tx_id, true);
+    let variables = result_to_variables(&result, tx_id, true);
     result.free_data();
 
     Ok(ProcessingResult { variables })
@@ -349,51 +242,44 @@ fn result_to_variables(result: &CorazaResult, tx_id: &str, is_response: bool) ->
     let mut vars = RVec::with_capacity(if is_response { 3 } else { 7 });
 
     if !is_response {
-        vars.push(TxnVariable {
-            scope: VarScope::Transaction,
-            name: RString::from("id"),
-            value: SpoeValue::String(RString::from(tx_id)),
-        });
+        vars.push(TxnVariable::transaction(
+            "id",
+            SpoeValue::String(RString::from(tx_id)),
+        ));
     }
 
-    vars.push(TxnVariable {
-        scope: VarScope::Transaction,
-        name: RString::from(format!("{prefix}action")),
-        value: SpoeValue::String(RString::from(result.action_str())),
-    });
+    vars.push(TxnVariable::transaction(
+        format!("{prefix}action"),
+        SpoeValue::String(RString::from(result.action_str())),
+    ));
 
-    vars.push(TxnVariable {
-        scope: VarScope::Transaction,
-        name: RString::from(format!("{prefix}status")),
-        value: SpoeValue::Int32(result.status),
-    });
+    vars.push(TxnVariable::transaction(
+        format!("{prefix}status"),
+        SpoeValue::Int32(result.status),
+    ));
 
-    vars.push(TxnVariable {
-        scope: VarScope::Transaction,
-        name: RString::from(format!("{prefix}rule_id")),
-        value: SpoeValue::Int32(result.rule_id),
-    });
+    vars.push(TxnVariable::transaction(
+        format!("{prefix}rule_id"),
+        SpoeValue::Int32(result.rule_id),
+    ));
 
     if !is_response {
-        vars.push(TxnVariable {
-            scope: VarScope::Transaction,
-            name: RString::from("anomaly_score"),
-            value: SpoeValue::Int32(result.anomaly_score),
-        });
+        vars.push(TxnVariable::transaction(
+            "anomaly_score",
+            SpoeValue::Int32(result.anomaly_score),
+        ));
 
-        vars.push(TxnVariable {
-            scope: VarScope::Transaction,
-            name: RString::from("rules_hit"),
-            value: SpoeValue::Int32(result.rules_hit),
-        });
+        vars.push(TxnVariable::transaction(
+            "rules_hit",
+            SpoeValue::Int32(result.rules_hit),
+        ));
 
         let data = result.data_str();
         if !data.is_empty() {
-            vars.push(TxnVariable {
-                scope: VarScope::Transaction,
-                name: RString::from("data"),
-                value: SpoeValue::String(RString::from(data)),
-            });
+            vars.push(TxnVariable::transaction(
+                "data",
+                SpoeValue::String(RString::from(data)),
+            ));
         }
     }
 
@@ -470,13 +356,21 @@ fn last_ffi_error() -> String {
     msg
 }
 
-/// Extract an integer from a SpoeValue.
-fn extract_int(v: &SpoeValue) -> i32 {
-    match v {
-        SpoeValue::Int32(n) => *n,
-        SpoeValue::Uint32(n) => *n as i32,
-        SpoeValue::Int64(n) => *n as i32,
-        SpoeValue::Uint64(n) => *n as i32,
-        _ => 0,
+/// Extract raw bytes from a `SpoeValue` that may be `Binary` or `String`.
+fn extract_bytes(value: Option<&SpoeValue>) -> Vec<u8> {
+    match value {
+        Some(SpoeValue::Binary(b)) => b.to_vec(),
+        Some(SpoeValue::String(s)) => s.as_bytes().to_vec(),
+        _ => Vec::new(),
+    }
+}
+
+/// Extract raw bytes from a `SpoeValue` that may be `Binary` or `String`,
+/// then parse as HAProxy header format.
+fn extract_bytes_as_headers(value: Option<&SpoeValue>) -> Vec<u8> {
+    match value {
+        Some(SpoeValue::Binary(b)) => parse_haproxy_headers(b.as_slice()),
+        Some(SpoeValue::String(s)) => parse_haproxy_headers(s.as_bytes()),
+        _ => Vec::new(),
     }
 }

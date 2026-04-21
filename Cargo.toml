@@ -10,7 +10,7 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-haproxy-spoa-hub-plugin-api = "0.1"
+haproxy-spoa-hub-plugin-api = "0.2"
 abi_stable = "0.11"
 log = "0.4"
 
