@@ -121,4 +121,4 @@ cd tests/e2e && make test
 
 ## License
 
-MIT
+Licensed under the [Apache License 2.0](LICENSE).
