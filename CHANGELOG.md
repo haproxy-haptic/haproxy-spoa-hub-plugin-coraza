@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-28
+
 ### Added
 
 - Release artifacts (plugin `.so` files) published to the GitLab Generic
