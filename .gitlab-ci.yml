@@ -22,12 +22,6 @@ variables:
   # renovate: datasource=crate depName=cargo-auditable
   # 0.7.0+ required for Rust edition 2024 support (used by this crate).
   CARGO_AUDITABLE_VERSION: "0.7.4"
-  # renovate: datasource=github-releases depName=sigstore/cosign extractVersion=^v(?<version>.*)$
-  COSIGN_VERSION: "2.4.1"
-  # SHA256 of cosign-linux-amd64 for COSIGN_VERSION. Pinned in-repo so a
-  # compromised upstream release cannot supply a matching checksums file.
-  # Renovate must keep this in sync with COSIGN_VERSION on bump.
-  COSIGN_SHA256: "8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b"
   CARGO_INCREMENTAL: "0"
   GLIBC_VERSION: "2.36"
   LIB_NAME: "libcoraza_plugin"
@@ -262,22 +256,10 @@ e2e:
 # aud=sigstore); cosign reads SIGSTORE_ID_TOKEN automatically.
 # =============================================================================
 
-# Reusable cosign install snippet. Pinned to COSIGN_VERSION (renovate-managed)
-# and verified against COSIGN_SHA256 pinned in this repo, so a compromised
-# upstream release cannot supply a matching checksums file alongside a
-# malicious binary.
+# Install cosign from alpine community; trust derives from alpine package signing.
 .install-cosign:
   before_script:
-    - apk add --no-cache curl
-    - |
-      curl -sSL --fail -o /usr/local/bin/cosign \
-        "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-amd64"
-      actual=$(sha256sum /usr/local/bin/cosign | awk '{print $1}')
-      if [ "${COSIGN_SHA256}" != "${actual}" ]; then
-        echo "cosign checksum mismatch: expected ${COSIGN_SHA256}, got ${actual}" >&2
-        exit 1
-      fi
-      chmod +x /usr/local/bin/cosign
+    - apk add --no-cache cosign
     - cosign version
 
 # Sign every file under ./artifacts (per-arch plugin .so files). Output:
