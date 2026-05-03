@@ -183,9 +183,27 @@ fn validate_directives_string(directives: &str) -> Vec<Diagnostic> {
     if directives.is_empty() {
         return Vec::new();
     }
+    // Use the length of the *converted* CString, not `directives.len()`.
+    // `to_cstring` falls back to an empty string when the input
+    // contains an interior null byte, so passing the original length
+    // would have the Go side read past the end of the empty buffer
+    // (out-of-bounds read). After conversion, `dir_c.as_bytes().len()`
+    // is the actual byte count of the string Go will see.
     let dir_c = to_cstring(directives);
-    let json_ptr =
-        unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), directives.len() as c_int) };
+    let dir_len = match c_int::try_from(dir_c.as_bytes().len()) {
+        Ok(n) => n,
+        // SecLang directive strings exceeding i32::MAX are not
+        // realistic; surface a synthetic error rather than silently
+        // truncating the length on the FFI boundary.
+        Err(_) => {
+            return vec![Diagnostic::error(
+                0,
+                0,
+                "directives string exceeds i32::MAX bytes; refusing to validate",
+            )];
+        }
+    };
+    let json_ptr = unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len) };
     if json_ptr.is_null() {
         return Vec::new();
     }
@@ -657,6 +675,56 @@ mod validate_tests {
                 .iter()
                 .map(|d| d.message.as_str().to_string())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// Regression for the null-byte FFI length mismatch. `to_cstring`
+    /// falls back to an empty CString on interior null bytes; if we
+    /// passed the original `&str` length to the Go side it would read
+    /// `len` bytes from a 1-byte buffer and corrupt memory. Using
+    /// `dir_c.as_bytes().len()` after conversion keeps lengths and
+    /// pointers coherent. The plugin must NOT crash for this input.
+    #[test]
+    fn directives_with_interior_null_byte_does_not_corrupt_memory() {
+        let plugin = CorazaPlugin::__new();
+        let directives = "SecRuleEngine On\n\0SecBogus On\n";
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String(directives.into()),
+        )]));
+        // We don't assert a specific shape — Coraza sees an empty
+        // directives string after the conversion and returns no
+        // diagnostics. The point of the test is that we don't read
+        // past the end of the converted buffer, which would manifest
+        // as a crash or sanitiser error under MIRI / asan.
+        let _ = diags;
+    }
+
+    /// Coraza-bundled directives like `@coraza.conf-recommended` and
+    /// `@owasp_crs/*.conf` reference the embedded CRS filesystem. The
+    /// production WAF wires this via `WithRootFS(mergefs.Merge(coreruleset.FS, ...))`;
+    /// `validate()` must mirror that setup or it would synthesise
+    /// false-positive errors for configs that production accepts.
+    #[test]
+    fn validates_embedded_coreruleset_includes() {
+        let plugin = CorazaPlugin::__new();
+        let directives = concat!(
+            "SecRuleEngine On\n",
+            "Include @coraza.conf-recommended\n",
+            "Include @crs-setup.conf.example\n",
+            "Include @owasp_crs/*.conf\n",
+        );
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String(directives.into()),
+        )]));
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "embedded CRS includes must resolve via mergefs(coreruleset.FS, ...), got {errors:?}"
         );
     }
 

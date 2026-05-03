@@ -25,8 +25,11 @@ import (
 	"io"
 	"unsafe"
 
+	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/debuglog"
+	"github.com/jcchavezs/mergefs"
+	osfs "github.com/jcchavezs/mergefs/io"
 )
 
 // capturedDiagnostic mirrors plugin_api::Diagnostic on the wire.
@@ -128,8 +131,18 @@ func coraza_validate_directives(directives *C.char, directivesLen C.int) *C.char
 	captured := make([]capturedDiagnostic, 0)
 	logger := &capturedLogger{diagnostics: &captured}
 
+	// Mirror the production `createWAF` rootFS setup so directives that
+	// reference the embedded CRS (`@coraza.conf-recommended`,
+	// `@owasp_crs/*.conf`) resolve identically here. Without this,
+	// validating a config that production accepts would synthesize
+	// false-positive "no such file or directory" errors. The OS FS
+	// layer lets operators include their own files at known absolute
+	// paths if they ever add a custom rule include — same shape as
+	// production, no surprises.
+	rootFS := mergefs.Merge(coreruleset.FS, osfs.OSFS)
 	cfg := coraza.NewWAFConfig().
 		WithDebugLogger(logger).
+		WithRootFS(rootFS).
 		WithDirectives(goDirectives)
 
 	_, err := coraza.NewWAF(cfg)
