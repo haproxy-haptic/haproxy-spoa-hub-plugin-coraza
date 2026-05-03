@@ -195,12 +195,13 @@ dependencies = [
 
 [[package]]
 name = "coraza-plugin"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "abi_stable",
  "criterion",
  "haproxy-spoa-hub-plugin-api",
  "log",
+ "serde",
  "serde_json",
 ]
 
@@ -328,9 +329,9 @@ dependencies = [
 
 [[package]]
 name = "haproxy-spoa-hub-plugin-api"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5186b4f2c5281c1017efa3b27a8b6bfd57f4a8ed8aed2a308f5a036527b484f"
+checksum = "893b89aa5492d428c801ba8fded5b325b16a42fa375e1e6dd95f3afab8ed7388"
 dependencies = [
  "abi_stable",
 ]

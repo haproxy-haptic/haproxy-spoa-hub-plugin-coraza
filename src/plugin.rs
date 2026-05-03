@@ -1,8 +1,9 @@
-use std::ffi::{CStr, c_int};
+use std::ffi::{CStr, c_char, c_int};
 use std::sync::OnceLock;
 
 use haproxy_spoa_hub_plugin_api::{
-    ProcessingResult, RString, RVec, SpoeMessage, SpoeValue, TxnVariable, define_plugin,
+    ConfigValue, Diagnostic, PluginContext, ProcessingResult, RString, RVec, SpoeMessage,
+    SpoeValue, TxnVariable, define_plugin,
 };
 
 use crate::config::PluginConfig;
@@ -97,7 +98,126 @@ define_plugin!(CorazaPlugin, {
     fn config_schema(&self) -> Option<&str> {
         Some(PluginConfig::config_schema())
     }
+
+    fn validate(&self, context: &PluginContext) -> Vec<Diagnostic> {
+        // Pure SecLang compile-check via coraza.NewWAF, capturing
+        // parser line numbers from the WAF's debug logger. No side
+        // effects: NewWAF allocates rule structures + compiles
+        // regexes but doesn't open sockets, spawn goroutines, or
+        // touch shared state. The WAF instance is dropped at the end
+        // of this call.
+        //
+        // Validates BOTH the top-level `directives` field and each
+        // entry in `applications[].directives`. Per-app directives
+        // are HAPTIC's primary path for per-Ingress modsecurity-
+        // snippet wiring (see docs/agents/coraza-pluggable.md after
+        // chart-side wiring lands).
+        let mut diagnostics = Vec::new();
+        validate_directives_field(context, "directives", &mut diagnostics);
+        validate_applications(context, &mut diagnostics);
+        diagnostics
+    }
 });
+
+/// Validate the directives string at `key` (top-level `directives` or
+/// `applications[].directives`) by compiling it via Coraza and
+/// capturing line-numbered parser diagnostics.
+fn validate_directives_field(
+    context: &PluginContext,
+    key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(value) = context.get_config(key) else {
+        return;
+    };
+    let Some(directives) = value.as_str() else {
+        return;
+    };
+    diagnostics.extend(validate_directives_string(directives));
+}
+
+/// Validate each `[plugins.params.coraza.applications]` entry's
+/// `directives` field. Skipped silently when applications is missing
+/// or has the wrong shape — the schema check handles structural
+/// errors.
+fn validate_applications(context: &PluginContext, diagnostics: &mut Vec<Diagnostic>) {
+    let Some(apps) = context
+        .get_config("applications")
+        .and_then(ConfigValue::as_array)
+    else {
+        return;
+    };
+    for app in apps {
+        let Some(table) = app.as_table() else {
+            continue;
+        };
+        let Some(directives) = table
+            .get(&RString::from("directives"))
+            .and_then(ConfigValue::as_str)
+        else {
+            continue;
+        };
+        // Tag each diagnostic with the app name when available so
+        // the operator can find which application's directives are
+        // bad. Coraza's parser doesn't know about app names so we
+        // prefix the message ourselves.
+        let app_name = table
+            .get(&RString::from("name"))
+            .and_then(ConfigValue::as_str)
+            .unwrap_or("<unnamed>");
+        for mut d in validate_directives_string(directives) {
+            let mut prefixed = String::with_capacity(d.message.len() + app_name.len() + 16);
+            prefixed.push_str("application '");
+            prefixed.push_str(app_name);
+            prefixed.push_str("': ");
+            prefixed.push_str(d.message.as_str());
+            d.message = prefixed.into();
+            diagnostics.push(d);
+        }
+    }
+}
+
+/// Compile a SecLang directives string via Coraza, return any
+/// captured warnings/errors as `plugin_api::Diagnostic` values.
+fn validate_directives_string(directives: &str) -> Vec<Diagnostic> {
+    if directives.is_empty() {
+        return Vec::new();
+    }
+    let dir_c = to_cstring(directives);
+    let json_ptr =
+        unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), directives.len() as c_int) };
+    if json_ptr.is_null() {
+        return Vec::new();
+    }
+    let json_str = unsafe { CStr::from_ptr(json_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { ffi::coraza_free_string(json_ptr as *mut c_char) };
+
+    parse_validation_json(&json_str)
+}
+
+/// Deserialise the JSON returned by `coraza_validate_directives` into
+/// `Vec<Diagnostic>`. The wire form is `[{"severity","line","message"},...]`.
+fn parse_validation_json(json: &str) -> Vec<Diagnostic> {
+    #[derive(serde::Deserialize)]
+    struct CapturedDiagnostic {
+        severity: String,
+        line: u32,
+        message: String,
+    }
+    let captured: Vec<CapturedDiagnostic> = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    captured
+        .into_iter()
+        .map(|c| match c.severity.as_str() {
+            "error" => Diagnostic::error(c.line, 0, c.message),
+            _ => Diagnostic::warning(c.line, 0, c.message),
+        })
+        .collect()
+}
 
 impl Drop for CorazaPlugin {
     fn drop(&mut self) {
@@ -384,5 +504,178 @@ fn extract_bytes_as_headers(value: Option<&SpoeValue>) -> Vec<u8> {
         Some(SpoeValue::Binary(b)) => parse_haproxy_headers(b.as_slice()),
         Some(SpoeValue::String(s)) => parse_haproxy_headers(s.as_bytes()),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    //! Unit tests for the `validate()` plugin-API method (spec
+    //! `003-validate-override`). These cover both the per-field call
+    //! into Coraza's parser via FFI and the per-application prefixing.
+
+    use super::*;
+    use haproxy_spoa_hub_plugin_api::{
+        ConfigValue, DiagnosticSeverity, PluginContext, RHashMap, RVec,
+    };
+
+    fn ctx_with(entries: Vec<(&str, ConfigValue)>) -> PluginContext {
+        let mut config = RHashMap::new();
+        for (k, v) in entries {
+            config.insert(RString::from(k), v);
+        }
+        PluginContext {
+            name: RString::from("coraza"),
+            config,
+        }
+    }
+
+    #[test]
+    fn empty_config_yields_no_diagnostics() {
+        let plugin = CorazaPlugin::__new();
+        let diags = plugin.__validate(&ctx_with(vec![]));
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for empty config, got {diags:?}"
+        );
+    }
+
+    #[test]
+    fn empty_directives_string_yields_no_diagnostics() {
+        let plugin = CorazaPlugin::__new();
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String("".into()),
+        )]));
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for empty directives string, got {diags:?}"
+        );
+    }
+
+    #[test]
+    fn valid_directives_yield_no_errors() {
+        let plugin = CorazaPlugin::__new();
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String("SecRuleEngine On\n".into()),
+        )]));
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "expected no errors for valid directives, got {errors:?}"
+        );
+    }
+
+    /// Regression: a plain SecLang typo (unknown directive) MUST surface
+    /// as at least one Error diagnostic. This is the central property of
+    /// validate() — invalid custom Coraza configs (e.g., from a HAPTIC
+    /// per-Ingress modsecurity-snippet annotation) get caught at admission
+    /// time rather than crashing the plugin's `init()` later.
+    #[test]
+    fn invalid_directive_yields_error() {
+        let plugin = CorazaPlugin::__new();
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String("SecBogusDirective totally-invalid\n".into()),
+        )]));
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .collect();
+        assert!(
+            !errors.is_empty(),
+            "expected at least one Error diagnostic for unknown directive, got {diags:?}"
+        );
+    }
+
+    /// Regression: an unknown directive on a specific line MUST emit a
+    /// diagnostic carrying a non-zero `line` field so the upstream
+    /// admission webhook can highlight the offending row in the user's
+    /// snippet. Coraza's parser uses the `logAndReturnErr` path for the
+    /// "unknown directive" case which logs `Error().Int("line", N)`
+    /// before returning the wrapped error — this is the most common
+    /// operator typo case (a misspelled directive name).
+    #[test]
+    fn unknown_directive_yields_diagnostic_with_line_number() {
+        let plugin = CorazaPlugin::__new();
+        // Line 1: SecRuleEngine On (valid)
+        // Line 2: blank
+        // Line 3: typo of `SecRequestBodyAccess` — unknown directive
+        let directives = "SecRuleEngine On\n\nSecResquestBodyAccess On\n";
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String(directives.into()),
+        )]));
+        assert!(
+            !diags.is_empty(),
+            "expected diagnostics for unknown directive, got none"
+        );
+        assert!(
+            diags.iter().any(|d| d.line == 3),
+            "expected diagnostic on line 3 (the typo line), got {diags:?}"
+        );
+    }
+
+    /// Regression for the user-requested behaviour: invalid custom
+    /// Coraza configs supplied through `applications[].directives` MUST
+    /// be caught by validate() and tagged with the application name so
+    /// operators can find which Ingress is broken.
+    #[test]
+    fn invalid_application_directives_yield_prefixed_error() {
+        let plugin = CorazaPlugin::__new();
+        let mut app = RHashMap::new();
+        app.insert(
+            RString::from("name"),
+            ConfigValue::String("ingress-prod-foo".into()),
+        );
+        app.insert(
+            RString::from("directives"),
+            ConfigValue::String("SecBogusDirective foo\n".into()),
+        );
+        let apps: RVec<ConfigValue> = vec![ConfigValue::Table(app)].into();
+        let ctx = ctx_with(vec![("applications", ConfigValue::Array(apps))]);
+
+        let diags = plugin.__validate(&ctx);
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .collect();
+        assert!(
+            !errors.is_empty(),
+            "expected error for bad application directives, got {diags:?}"
+        );
+        assert!(
+            errors.iter().any(|d| d
+                .message
+                .as_str()
+                .contains("application 'ingress-prod-foo':")),
+            "expected app-name prefix in messages, got {:?}",
+            errors
+                .iter()
+                .map(|d| d.message.as_str().to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Plugins MUST leave `path` empty so the hub can overwrite it
+    /// with the file identity it knows about. See plugin-api delta in
+    /// `specs/004-validate-mode/contracts/plugin-api-delta.md`.
+    #[test]
+    fn diagnostics_have_empty_path_for_hub_to_fill() {
+        let plugin = CorazaPlugin::__new();
+        let diags = plugin.__validate(&ctx_with(vec![(
+            "directives",
+            ConfigValue::String("SecBogusDirective foo\n".into()),
+        )]));
+        for d in &diags {
+            assert!(
+                d.path.is_empty(),
+                "plugin diagnostic carried non-empty path; hub-owned invariant violated: {:?}",
+                d.path.as_str()
+            );
+        }
     }
 }
