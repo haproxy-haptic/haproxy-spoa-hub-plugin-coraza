@@ -14,16 +14,18 @@ The argument name `detect-only` is the same name and type used on the existing `
 
 ## Interaction with existing `check-request` input arguments
 
+When `detect-only` is absent or has the wrong type, the plugin falls back to the hub-global `config.detect_only` setting (current behaviour, unchanged). When `detect-only` is set to `true` or `false`, the per-message value wins regardless of the global default. This means `detect-only=false` is NOT a no-op when the global is `true` — it explicitly overrides the global to enforce the verdict for this transaction.
+
 | `app` | `detect-only` | Effect |
 |---|---|---|
-| absent | absent | (current behaviour) Default WAF instance evaluates; verdict enforced. |
-| set | absent | (current behaviour) Selected WAF instance evaluates; verdict enforced. |
-| absent | `true` | Default WAF instance evaluates; rules fire as normal but `action` returned as `allow`. |
+| absent | absent | Default WAF instance evaluates; verdict per `config.detect_only`. |
+| set | absent | Selected WAF instance evaluates; verdict per `config.detect_only`. |
+| absent | `true` | Default WAF instance evaluates; verdict coerced to `allow`. |
 | set | `true` | Selected WAF instance evaluates; verdict coerced to `allow`. |
-| absent | `false` | Same as absent. |
-| set | `false` | Same as `app` set / `detect-only` absent. |
-| absent | malformed | Same as absent. |
-| set | malformed | Same as `app` set / `detect-only` absent. |
+| absent | `false` | Default WAF instance evaluates; verdict enforced (overrides global). |
+| set | `false` | Selected WAF instance evaluates; verdict enforced (overrides global). |
+| absent | malformed | Same as `detect-only` absent (falls back to global). |
+| set | malformed | Same as `detect-only` absent (falls back to global). |
 
 ## Metrics behaviour
 

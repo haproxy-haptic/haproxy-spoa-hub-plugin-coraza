@@ -19,6 +19,25 @@
   (Rust and Go are co-built) so this is not an externally observable ABI
   change.
 
+### Fixed
+
+- Metrics: CRS anomaly-scoring blocks (rules 949110/949111 inbound,
+  959100/959101 outbound) are now correctly counted as `metricsBlocked`
+  instead of `metricsAllowed`. The previous code keyed off the local
+  `interrupted` boolean, which is set only by the Coraza interruption
+  path; the CRS anomaly-scoring branch in `buildResult` populates the
+  result with `actionDeny` and `status=403` without setting
+  `interrupted`. The new condition uses `result.status != 0` as the
+  canonical deny indicator, capturing both branches. Operators
+  monitoring these counters will see `metricsBlocked` increase and
+  `metricsAllowed` decrease for traffic that triggers CRS anomaly
+  thresholds.
+- Transaction cache: blocked requests (including the CRS anomaly path
+  above) no longer cache the transaction for the response phase. Under
+  the previous condition, CRS-anomaly-blocked transactions were cached
+  even though the request was denied and no response phase would run,
+  leaking the cached transaction until TTL eviction.
+
 ## [0.1.1] - 2026-04-28
 
 ### Added
