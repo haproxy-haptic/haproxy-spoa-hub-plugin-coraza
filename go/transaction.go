@@ -113,6 +113,7 @@ func coraza_process_request(
 	bodyLen C.int,
 	cacheTx C.int,
 	appName *C.char,
+	detectOnly C.int,
 ) (result C.coraza_result_t) {
 	defer recoverPanic("coraza_process_request")
 
@@ -205,15 +206,34 @@ func coraza_process_request(
 
 	result = buildResult(tx, interrupted)
 
-	if interrupted {
+	// `result.status > 0` is the canonical deny indicator: allowResult()
+	// sets status=0; both the interruption branch and the CRS anomaly
+	// branch in buildResult set status to the HTTP code (403, etc).
+	denied := result.status != 0
+
+	// Per-message detect-only override (specs/002-detect-only-request/).
+	// When set, the WAF still evaluated rules and result carries the
+	// matched rule_id, anomaly_score, rules_hit, and data — but the
+	// verdict is coerced to allow so HAProxy lets the request through.
+	// The operator's HAProxy rules can act on the diagnostic fields
+	// (e.g., logging, shadow-banning) without blocking.
+	if denied && detectOnly != 0 {
+		result.action = actionAllow
+		result.status = 0
+		denied = false
+	}
+
+	if denied {
 		metricsBlocked.Add(1)
 	} else {
 		metricsAllowed.Add(1)
 	}
 	metricsRulesHit.Add(int64(result.rules_hit))
 
-	// Cache transaction for response phase or close it
-	if cacheTx != 0 && !interrupted {
+	// Cache transaction for response phase or close it. In detect-only
+	// mode the request is allowed through, so we WILL get a response —
+	// honour the cacheTx flag accordingly.
+	if cacheTx != 0 && !denied {
 		cacheTransaction(goTxID, tx)
 	} else {
 		tx.ProcessLogging()

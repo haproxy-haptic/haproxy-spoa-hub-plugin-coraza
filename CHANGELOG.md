@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- Per-message `detect-only` override on the request-side `check-request`
+  message. When `detect-only=true` is set on the SPOE message, the WAF
+  evaluates rules normally but coerces the verdict to `action=allow` while
+  keeping `rule_id`, `anomaly_score`, `rules_hit`, and `data` populated;
+  the metric increment is reclassified from `metricsBlocked` to
+  `metricsAllowed`. Mirrors the existing response-side override of the
+  same name. Spec at `specs/002-detect-only-request/`.
+
+### Changed
+
+- The C ABI of `coraza_process_request` gains one trailing `c_int
+  detect_only` parameter. The FFI is private to this crate's build
+  (Rust and Go are co-built) so this is not an externally observable ABI
+  change.
+
 ## [0.1.1] - 2026-04-28
 
 ### Added
