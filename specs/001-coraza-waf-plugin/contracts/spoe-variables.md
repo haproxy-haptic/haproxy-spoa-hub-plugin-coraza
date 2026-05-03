@@ -19,6 +19,7 @@
 | `headers` | binary | `req.hdrs` | Raw request headers |
 | `body` | binary | `req.body` | Request body |
 | `app` | string | (optional) | Application name for multi-app routing |
+| `detect-only` | bool | (optional) | Per-message override: when `true`, the WAF evaluates rules normally but coerces the verdict to `action=allow`; matched `rule_id`, `anomaly_score`, `rules_hit`, and `data` are still populated. Falls back to the hub-global `detect_only` config when malformed or absent. See `specs/002-detect-only-request/`. |
 
 ### Output Variables (set by plugin)
 

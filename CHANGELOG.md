@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Added
+
+- Per-message `detect-only` override on the request-side `check-request`
+  message. When `detect-only=true` is set on the SPOE message, the WAF
+  evaluates rules normally but coerces the verdict to `action=allow` while
+  keeping `rule_id`, `anomaly_score`, `rules_hit`, and `data` populated;
+  the metric increment is reclassified from `metricsBlocked` to
+  `metricsAllowed`. Mirrors the existing response-side override of the
+  same name. Spec at `specs/002-detect-only-request/`.
+
+### Changed
+
+- The C ABI of `coraza_process_request` gains one trailing `c_int
+  detect_only` parameter. The FFI is private to this crate's build
+  (Rust and Go are co-built) so this is not an externally observable ABI
+  change.
+
+### Fixed
+
+- Metrics: CRS anomaly-scoring blocks (rules 949110/949111 inbound,
+  959100/959101 outbound) are now correctly counted as `metricsBlocked`
+  instead of `metricsAllowed`. The previous code keyed off the local
+  `interrupted` boolean, which is set only by the Coraza interruption
+  path; the CRS anomaly-scoring branch in `buildResult` populates the
+  result with `actionDeny` and `status=403` without setting
+  `interrupted`. The new condition uses `result.status != 0` as the
+  canonical deny indicator, capturing both branches. Operators
+  monitoring these counters will see `metricsBlocked` increase and
+  `metricsAllowed` decrease for traffic that triggers CRS anomaly
+  thresholds.
+- Transaction cache: blocked requests (including the CRS anomaly path
+  above) no longer cache the transaction for the response phase. Under
+  the previous condition, CRS-anomaly-blocked transactions were cached
+  even though the request was denied and no response phase would run,
+  leaking the cached transaction until TTL eviction.
+
 ## [0.1.1] - 2026-04-28
 
 ### Added

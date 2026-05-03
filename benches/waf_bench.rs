@@ -59,6 +59,7 @@ fn bench_benign_request(c: &mut Criterion) {
                     0,
                     0,
                     std::ptr::null(),
+                    0, // detect_only
                 )
             };
             assert_eq!(result.action_str(), "allow");
@@ -103,6 +104,7 @@ fn bench_sql_injection(c: &mut Criterion) {
                     0,
                     0,
                     std::ptr::null(),
+                    0, // detect_only
                 )
             };
             assert_eq!(result.action_str(), "deny");

@@ -159,6 +159,17 @@ fn process_request(
 
     let cache_tx = if config.response_check { 1 } else { 0 };
 
+    // Per-message detect-only override. When set on a request-side message,
+    // the WAF still evaluates rules normally but coerces the verdict to
+    // `action=allow` while keeping `rule_id`, `anomaly_score`, etc.
+    // populated. Mirrors the response-side override and falls back to the
+    // hub-global `config.detect_only` for absent or malformed values.
+    // See specs/002-detect-only-request/.
+    let detect_only = message
+        .get_bool("detect-only")
+        .unwrap_or(config.detect_only);
+    let detect_only_flag = if detect_only { 1 } else { 0 };
+
     let start = std::time::Instant::now();
     let result = unsafe {
         ffi::coraza_process_request(
@@ -178,6 +189,7 @@ fn process_request(
             body_buf.len() as c_int,
             cache_tx,
             app_name_ptr,
+            detect_only_flag,
         )
     };
     let latency_us = start.elapsed().as_micros();

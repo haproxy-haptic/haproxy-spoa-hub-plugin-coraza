@@ -44,6 +44,7 @@ unsafe extern "C" {
         body_len: c_int,
         cache_tx: c_int,
         app_name: *const c_char,
+        detect_only: c_int,
     ) -> CorazaResult;
 
     // Response processing
