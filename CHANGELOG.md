@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-03
+
 ### Added
 
 - `validate()` override on the `SpoePlugin` trait (plugin-api v0.3+).
