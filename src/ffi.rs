@@ -59,6 +59,15 @@ unsafe extern "C" {
         detect_only: c_int,
     ) -> CorazaResult;
 
+    // Plugin-API validate(): compile directives via Coraza, capturing
+    // SecLang parser line numbers from the WAF's debug logger. Returns
+    // a JSON-encoded `[]{severity,line,message}` slice as a heap-
+    // allocated C string the caller MUST free via `coraza_free_string`.
+    pub fn coraza_validate_directives(
+        directives: *const c_char,
+        directives_len: c_int,
+    ) -> *mut c_char;
+
     // Cache configuration
     pub fn coraza_set_cache_ttl(ttl_ms: c_int);
 

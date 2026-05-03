@@ -195,12 +195,13 @@ dependencies = [
 
 [[package]]
 name = "coraza-plugin"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "abi_stable",
  "criterion",
  "haproxy-spoa-hub-plugin-api",
  "log",
+ "serde",
  "serde_json",
 ]
 

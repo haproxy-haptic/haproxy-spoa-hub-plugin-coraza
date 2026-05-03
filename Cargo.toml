@@ -1,6 +1,6 @@
 [package]
 name = "coraza-plugin"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.86"
 description = "Coraza WAF plugin for haproxy-spoa-hub"
@@ -13,10 +13,11 @@ crate-type = ["cdylib", "rlib"]
 haproxy-spoa-hub-plugin-api = "0.3"
 abi_stable = "0.11"
 log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
-serde_json = "1"
 
 [[bench]]
 name = "waf_bench"

@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Added
+
+- `validate()` override on the `SpoePlugin` trait (plugin-api v0.3+).
+  The plugin now compiles the operator-supplied SecLang `directives`
+  string (and every `applications[].directives` entry) via
+  `coraza.NewWAF(WithDirectives(...))`, capturing the parser's
+  structured `Warn()`/`Error()` events and returning them as
+  `Vec<Diagnostic>` with the line numbers Coraza emits via
+  `Int("line", N)`. Per-application diagnostics are prefixed with
+  `application '<name>': ` so operators can identify which Ingress's
+  modsecurity-snippet is broken when several apps load in the same
+  plugin instance. Used by HAPTIC's validator-sidecar mode (hub's
+  `--validate-socket`) to reject Ingress changes carrying broken
+  Coraza directives at admission time, with line numbers highlighted
+  in the webhook response. Spec at `specs/003-validate-override/`.
+- One new exported FFI symbol `coraza_validate_directives` returning a
+  JSON-encoded `[{severity,line,message},...]` slice. Caller MUST free
+  via `coraza_free_string`. Internal to the crate's Rust+Go co-build.
+
+### Changed
+
+- Bumped `haproxy-spoa-hub-plugin-api` dependency from `0.2` to `0.3`
+  (additive trait method `validate()` with default empty-vec impl;
+  pre-v0.3 plugins continue to build).
+- Added `serde` and `serde_json` as runtime dependencies (used by
+  `validate()` to deserialise the JSON-encoded diagnostics returned
+  from the Go side).
+
 ## [0.2.0] - 2026-05-03
 
 ### Added
