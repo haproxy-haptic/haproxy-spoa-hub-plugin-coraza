@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-04
+
+### Changed
+
+- **BREAKING**: Bumped `haproxy-spoa-hub-plugin-api` dependency to `0.5` (the hand-rolled `#[repr(C)]` vtable migration). This plugin's `.so` will only load on `haproxy-spoa-hub` v0.5.0 or newer. Older hubs reject the load with a "missing required symbol 'get_plugin_vtable'" error since the entry-symbol naming changed. Plugin source code is unchanged — the `define_plugin!` macro absorbed the FFI shape difference.
+- Dropped the direct `abi_stable = "0.11"` dependency. Plugin-api re-exports the abi_stable types this crate uses (`RString`, `RVec`, `RHashMap`, etc.); no direct dep is required.
+
 ## [0.3.0] - 2026-05-03
 
 ### Added
