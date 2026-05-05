@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-05
+
 ### Fixed
 
 - `validate()` now uses `PluginConfig::from_context(context)` and
