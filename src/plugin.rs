@@ -2,8 +2,7 @@ use std::ffi::{CStr, c_char, c_int};
 use std::sync::{OnceLock, RwLock};
 
 use haproxy_spoa_hub_plugin_api::{
-    ConfigValue, Diagnostic, PluginContext, ProcessingResult, RString, RVec, SpoeMessage,
-    SpoeValue, TxnVariable, define_plugin,
+    Diagnostic, ProcessingResult, RString, RVec, SpoeMessage, SpoeValue, TxnVariable, define_plugin,
 };
 
 use crate::config::PluginConfig;
@@ -199,74 +198,34 @@ define_plugin!(CorazaPlugin, {
         // of this call.
         //
         // Validates BOTH the top-level `directives` field and each
-        // entry in `applications[].directives`. Per-app directives
-        // are HAPTIC's primary path for per-Ingress modsecurity-
-        // snippet wiring (see docs/agents/coraza-pluggable.md after
-        // chart-side wiring lands).
-        let mut diagnostics = Vec::new();
-        validate_directives_field(context, "directives", &mut diagnostics);
-        validate_applications(context, &mut diagnostics);
+        // per-application `applications.<name>.directives` field. Per-
+        // app directives are HAPTIC's primary path for per-Ingress
+        // modsecurity-snippet wiring.
+        //
+        // Routes through `PluginConfig::from_context` rather than
+        // walking the raw `PluginContext` so the schema understood
+        // here exactly matches what `init()` consumes — single source
+        // of truth, no parallel parser, no drift. The hub guarantees
+        // the context already satisfies `config_schema()` before
+        // calling `validate()` (haproxy-spoa-hub v0.5.2+
+        // `plugin_loader::collect_schema_errors`), so we only do
+        // semantic (Coraza-parser) checks here.
+        let config = PluginConfig::from_context(context);
+        let mut diagnostics = validate_directives_string(&config.directives);
+        for app in &config.applications {
+            for mut d in validate_directives_string(&app.directives) {
+                let mut prefixed = String::with_capacity(d.message.len() + app.name.len() + 16);
+                prefixed.push_str("application '");
+                prefixed.push_str(&app.name);
+                prefixed.push_str("': ");
+                prefixed.push_str(d.message.as_str());
+                d.message = prefixed.into();
+                diagnostics.push(d);
+            }
+        }
         diagnostics
     }
 });
-
-/// Validate the directives string at `key` (top-level `directives` or
-/// `applications[].directives`) by compiling it via Coraza and
-/// capturing line-numbered parser diagnostics.
-fn validate_directives_field(
-    context: &PluginContext,
-    key: &str,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let Some(value) = context.get_config(key) else {
-        return;
-    };
-    let Some(directives) = value.as_str() else {
-        return;
-    };
-    diagnostics.extend(validate_directives_string(directives));
-}
-
-/// Validate each `[plugins.params.coraza.applications]` entry's
-/// `directives` field. Skipped silently when applications is missing
-/// or has the wrong shape — the schema check handles structural
-/// errors.
-fn validate_applications(context: &PluginContext, diagnostics: &mut Vec<Diagnostic>) {
-    let Some(apps) = context
-        .get_config("applications")
-        .and_then(ConfigValue::as_array)
-    else {
-        return;
-    };
-    for app in apps {
-        let Some(table) = app.as_table() else {
-            continue;
-        };
-        let Some(directives) = table
-            .get(&RString::from("directives"))
-            .and_then(ConfigValue::as_str)
-        else {
-            continue;
-        };
-        // Tag each diagnostic with the app name when available so
-        // the operator can find which application's directives are
-        // bad. Coraza's parser doesn't know about app names so we
-        // prefix the message ourselves.
-        let app_name = table
-            .get(&RString::from("name"))
-            .and_then(ConfigValue::as_str)
-            .unwrap_or("<unnamed>");
-        for mut d in validate_directives_string(directives) {
-            let mut prefixed = String::with_capacity(d.message.len() + app_name.len() + 16);
-            prefixed.push_str("application '");
-            prefixed.push_str(app_name);
-            prefixed.push_str("': ");
-            prefixed.push_str(d.message.as_str());
-            d.message = prefixed.into();
-            diagnostics.push(d);
-        }
-    }
-}
 
 /// Compile a SecLang directives string via Coraza, return any
 /// captured warnings/errors as `plugin_api::Diagnostic` values.
@@ -628,9 +587,7 @@ mod validate_tests {
     //! into Coraza's parser via FFI and the per-application prefixing.
 
     use super::*;
-    use haproxy_spoa_hub_plugin_api::{
-        ConfigValue, DiagnosticSeverity, PluginContext, RHashMap, RVec,
-    };
+    use haproxy_spoa_hub_plugin_api::{ConfigValue, DiagnosticSeverity, PluginContext, RHashMap};
 
     fn ctx_with(entries: Vec<(&str, ConfigValue)>) -> PluginContext {
         let mut config = RHashMap::new();
@@ -734,23 +691,33 @@ mod validate_tests {
     }
 
     /// Regression for the user-requested behaviour: invalid custom
-    /// Coraza configs supplied through `applications[].directives` MUST
-    /// be caught by validate() and tagged with the application name so
-    /// operators can find which Ingress is broken.
+    /// Coraza configs supplied through `applications.<name>.directives`
+    /// MUST be caught by validate() and tagged with the application
+    /// name so operators can find which Ingress is broken.
+    ///
+    /// Schema is `applications` as a TOML *table* keyed by app name —
+    /// matching what `config_schema()` declares and what
+    /// `PluginConfig::from_context` parses at runtime. Pre-v0.4.2 this
+    /// test was written against an array-of-tables schema (each entry
+    /// embedding `name` + `directives`); that was a parallel-parser
+    /// bug in the validator path that silently no-op'd in production
+    /// because the runtime parser used the table-keyed-by-name form.
+    /// Routing both paths through `from_context` collapsed the two
+    /// schemas into one source of truth.
     #[test]
     fn invalid_application_directives_yield_prefixed_error() {
         let plugin = CorazaPlugin::__new();
-        let mut app = RHashMap::new();
-        app.insert(
-            RString::from("name"),
-            ConfigValue::String("ingress-prod-foo".into()),
-        );
-        app.insert(
+        let mut app_table = RHashMap::new();
+        app_table.insert(
             RString::from("directives"),
             ConfigValue::String("SecBogusDirective foo\n".into()),
         );
-        let apps: RVec<ConfigValue> = vec![ConfigValue::Table(app)].into();
-        let ctx = ctx_with(vec![("applications", ConfigValue::Array(apps))]);
+        let mut applications = RHashMap::new();
+        applications.insert(
+            RString::from("ingress-prod-foo"),
+            ConfigValue::Table(app_table),
+        );
+        let ctx = ctx_with(vec![("applications", ConfigValue::Table(applications))]);
 
         let diags = plugin.__validate(&ctx);
         let errors: Vec<_> = diags
@@ -767,6 +734,56 @@ mod validate_tests {
                 .as_str()
                 .contains("application 'ingress-prod-foo':")),
             "expected app-name prefix in messages, got {:?}",
+            errors
+                .iter()
+                .map(|d| d.message.as_str().to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Multiple applications under the same `applications` table each
+    /// get their diagnostics independently and tagged with their own
+    /// app name. Pins the per-app isolation contract: a bad rule in
+    /// one app doesn't suppress validation of another.
+    #[test]
+    fn multiple_applications_each_validated_with_own_name_prefix() {
+        let plugin = CorazaPlugin::__new();
+        let mut applications = RHashMap::new();
+        let mut alpha = RHashMap::new();
+        alpha.insert(
+            RString::from("directives"),
+            ConfigValue::String("SecBogusAlpha foo\n".into()),
+        );
+        applications.insert(RString::from("alpha"), ConfigValue::Table(alpha));
+        let mut bravo = RHashMap::new();
+        bravo.insert(
+            RString::from("directives"),
+            ConfigValue::String("SecBogusBravo bar\n".into()),
+        );
+        applications.insert(RString::from("bravo"), ConfigValue::Table(bravo));
+
+        let ctx = ctx_with(vec![("applications", ConfigValue::Table(applications))]);
+
+        let diags = plugin.__validate(&ctx);
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .collect();
+        assert!(
+            errors
+                .iter()
+                .any(|d| d.message.as_str().contains("application 'alpha':")),
+            "expected alpha-prefix in messages, got {:?}",
+            errors
+                .iter()
+                .map(|d| d.message.as_str().to_string())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|d| d.message.as_str().contains("application 'bravo':")),
+            "expected bravo-prefix in messages, got {:?}",
             errors
                 .iter()
                 .map(|d| d.message.as_str().to_string())
