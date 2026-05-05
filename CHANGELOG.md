@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `validate()` now uses `PluginConfig::from_context(context)` and
+  iterates the typed `config.applications: Vec<AppConfig>` instead of
+  walking the raw `PluginContext` with its own assumptions about shape.
+  v0.4.1 had two parallel parsers: `init()` went through `from_context`
+  (read `applications` as a TOML table keyed by app name), while
+  `validate()` had its own helper `validate_applications` that read
+  `applications` as a TOML array. This drift caused validator-sidecar
+  passes to silently skip per-application directive validation in
+  HAPTIC's chart rendering (where `applications` is rendered as a
+  table), letting broken Coraza directives slip past admission and only
+  fail at HAProxy reload time. Routing both code paths through
+  `from_context` collapses the two schemas into one source of truth.
+
+### Changed
+
+- Plugin authors writing `validate()` overrides should no longer do
+  structural validation of `PluginContext` fields against the schema
+  declared by `config_schema()`. The hub
+  (`haproxy-spoa-hub` v0.5.2+) now schema-checks the `PluginContext`
+  centrally — at load time AND on every validator-socket dispatch —
+  before calling `validate()`. Plugins can rely on `from_context()`
+  succeeding and only need to do *semantic* validation (e.g. compiling
+  SecLang directives). See the `define_plugin!` docstring in
+  haproxy-spoa-hub-plugin-api for the full contract.
+
+### Tests
+
+- Existing `invalid_application_directives_yield_prefixed_error` was
+  rewritten against the canonical table-keyed-by-name `applications`
+  schema (the one `from_context` and `config_schema` agree on), to
+  prevent regressing back to the array shape.
+- New `multiple_applications_each_validated_with_own_name_prefix` pins
+  per-app prefix isolation: with two apps each carrying broken
+  directives, every diagnostic is prefixed with the right app name and
+  no diagnostics leak between apps.
+
 ## [0.4.1] - 2026-05-05
 
 ### Fixed
