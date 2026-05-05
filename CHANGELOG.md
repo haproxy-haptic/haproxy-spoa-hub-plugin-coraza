@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- WAF handle and config now actually swap on every `init()`, not just the first. The plugin previously stored both in `OnceLock`, so the second `init()` (e.g. after a `haproxy-spoa-hub` SIGHUP / file-watch reload) silently dropped the new handle and kept serving requests against the first init's WAF — which the first `Drop` had already freed. Every post-reload request hit the Go-side WAF-engine-error path and came back as `action="deny", rule_id=0`, masquerading a default-deny as a rule decision. State now lives in a single `OnceLock<RwLock<State>>`; `init()` swaps both fields and frees the previous handle in one critical section, and `process()` holds the read lock across the FFI call so a parallel reload waits for in-flight requests to drain before swapping. Surfaced via downstream HAPTIC's per-Ingress `nginx.ingress.kubernetes.io/modsecurity-snippet` integration.
+
 ## [0.4.0] - 2026-05-04
 
 ### Changed

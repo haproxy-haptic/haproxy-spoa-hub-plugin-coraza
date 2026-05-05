@@ -1,5 +1,5 @@
 use std::ffi::{CStr, c_char, c_int};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use haproxy_spoa_hub_plugin_api::{
     ConfigValue, Diagnostic, PluginContext, ProcessingResult, RString, RVec, SpoeMessage,
@@ -9,8 +9,78 @@ use haproxy_spoa_hub_plugin_api::{
 use crate::config::PluginConfig;
 use crate::ffi::{self, CorazaResult, to_cstring};
 
-static CONFIG: OnceLock<PluginConfig> = OnceLock::new();
-static WAF_HANDLE: OnceLock<u64> = OnceLock::new();
+// Plugin state lives in a process-global `RwLock<State>` rather than
+// on the `CorazaPlugin` struct because the upstream `define_plugin!`
+// macro (macro_rules! in `haproxy-spoa-hub-plugin-api`) does not
+// expose the `&self` / `&mut self` receiver inside the user-supplied
+// init/process bodies — `self.field` in those bodies fails to bind to
+// the generated method's receiver under Rust 2024 macro hygiene
+// rules. Storing the WAF handle and config in a `static` and gating
+// access with `RwLock` keeps the bodies free of `self.field`.
+//
+// The previous design used `OnceLock<u64>` for the WAF handle, which
+// silently dropped the second init's handle on hub reload. Linux's
+// dlopen returns the same process-shared `.so` data segment, so the
+// static persists across hub-level "loads", and `OnceLock::set`
+// returns Err on every init except the first. `process()` kept using
+// the first init's handle, which the *first* Drop had already freed,
+// so every request post-reload landed on the WAF-engine-error path
+// (`action="deny", rule_id=0`) — defeating ADR-0007's hot-reload
+// guarantee for HAPTIC. See `reload_tests::process_after_reload_uses_new_init_waf`.
+//
+// The new design swaps both fields under one write lock per `init()`
+// and frees the previous handle in the same critical section. Reads
+// in `process()` take the read lock for the duration of the
+// `coraza_process_request` FFI call, so a reload that runs in
+// parallel waits for in-flight requests to finish before swapping —
+// no use-after-free on the Go side, no need for per-instance Drop
+// tracking, no `OnceLock` on the hot path.
+
+/// Combined latest-config + latest-WAF-handle. Wrapped in a single
+/// `RwLock` so init swaps both atomically and `process()` reads both
+/// against the same generation.
+#[derive(Default)]
+struct State {
+    /// WAF handle returned by the Go FFI for the latest `init()`
+    /// call. `0` before the first init runs.
+    waf_handle: u64,
+    /// Plugin config from the latest `init()` call. `Default` until
+    /// the first init runs.
+    config: PluginConfig,
+}
+
+static STATE: OnceLock<RwLock<State>> = OnceLock::new();
+
+fn state() -> &'static RwLock<State> {
+    STATE.get_or_init(|| RwLock::new(State::default()))
+}
+
+/// Acquire the state for reading, recovering through poisoned locks.
+///
+/// Lock poisoning happens when a writer panics mid-update. In our
+/// case the only writer is `init()`, and the data invariants it
+/// maintains are simple — both fields are plain values (`u64` and a
+/// `PluginConfig` clone) that are written together but never observed
+/// in a "half-applied" form, since the swap is `previous = mem::replace`-
+/// style. So a poisoned lock is safe to read through with
+/// `into_inner()`: callers see either the previous coherent state
+/// (init panicked before the assignments) or the new coherent state
+/// (init panicked after). The alternative — propagating the
+/// `PoisonError` as a panic on every subsequent `process()` call —
+/// would mean a single rare init panic permanently jams the SPOE
+/// worker pool, exactly the cascading failure mode we exist to
+/// prevent.
+fn state_read() -> std::sync::RwLockReadGuard<'static, State> {
+    state().read().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Acquire the state for writing, recovering through poisoned locks.
+/// Same rationale as `state_read` — every `init()` overwrites the
+/// state in full, so a partial/inconsistent prior state is also safe
+/// to overwrite.
+fn state_write() -> std::sync::RwLockWriteGuard<'static, State> {
+    state().write().unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Debug)]
 struct CorazaPlugin;
@@ -67,8 +137,28 @@ define_plugin!(CorazaPlugin, {
             unsafe { ffi::coraza_set_cache_ttl(config.transaction_ttl_ms as c_int) };
         }
 
-        WAF_HANDLE.set(handle).ok();
-        CONFIG.set(config).ok();
+        // Atomic swap-and-replace: take the previous handle out,
+        // install the new one + config in the same critical section.
+        // The write lock blocks until in-flight `process()` calls
+        // (which hold the read lock) finish, so no SPOE worker is
+        // mid-FFI on the previous handle when we free it below.
+        let previous_handle = {
+            let mut s = state_write();
+            let previous = s.waf_handle;
+            s.waf_handle = handle;
+            s.config = config;
+            previous
+        };
+
+        if previous_handle != 0 {
+            // Free the prior WAF instance — there are no live readers
+            // of it after the swap above, so the Go-side WAFs map
+            // can drop it safely. Don't call `coraza_shutdown()`: the
+            // Go runtime is process-global and shared with the rest
+            // of the spoa-hub binary.
+            unsafe { ffi::coraza_waf_free(previous_handle) };
+        }
+
         Ok(())
     }
 
@@ -84,13 +174,14 @@ define_plugin!(CorazaPlugin, {
         &self,
         message: &SpoeMessage,
     ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
-        let default_config = PluginConfig::default();
-        let config = CONFIG.get().unwrap_or(&default_config);
-        let waf_handle = WAF_HANDLE.get().copied().unwrap_or(0);
-
+        // Hold the read lock across the FFI call so a parallel
+        // `init()` waits for us to finish before swapping the handle.
+        // Without that, a freed-handle race surfaces as spurious
+        // `action="deny", rule_id=0` errors during reload.
+        let s = state_read();
         match message.name.as_str() {
-            "check-request" => process_request(message, config, waf_handle),
-            "check-response" => process_response(message, config),
+            "check-request" => process_request(message, &s.config, s.waf_handle),
+            "check-response" => process_response(message, &s.config),
             _ => Ok(ProcessingResult::empty()),
         }
     }
@@ -239,22 +330,27 @@ fn parse_validation_json(json: &str) -> Vec<Diagnostic> {
 
 impl Drop for CorazaPlugin {
     fn drop(&mut self) {
-        // Log final metrics before cleanup
+        // Log final metrics before the plugin instance goes away.
+        // Counters are process-global on the Go side, so the values
+        // include traffic from any concurrently-live instances during
+        // a hub reload window — fine for an operator-facing summary.
+        //
+        // We don't free the WAF handle here. `init()` already frees
+        // the previous handle when it swaps in a new one (see the
+        // swap-and-replace block there), so the only handle still
+        // alive at Drop time is the one currently serving traffic.
+        // Freeing it here would race with the hub's atomic registry
+        // swap and cut traffic out from under the new plugin
+        // instance. The last handle is reaped by the Go runtime at
+        // process exit.
         let allowed = unsafe { ffi::coraza_metrics_allowed() };
         let blocked = unsafe { ffi::coraza_metrics_blocked() };
         let rules_hit = unsafe { ffi::coraza_metrics_rules_hit() };
         let errors = unsafe { ffi::coraza_metrics_errors() };
         log::info!(
-            "Coraza WAF shutting down: allowed={allowed}, blocked={blocked}, \
+            "Coraza plugin shutting down: allowed={allowed}, blocked={blocked}, \
              rules_hit={rules_hit}, errors={errors}"
         );
-
-        // Free only this instance's WAF handle. Don't call coraza_shutdown()
-        // here because the Go runtime is process-global — other plugin
-        // instances (e.g., after SIGHUP reload) may still be active.
-        if let Some(&handle) = WAF_HANDLE.get() {
-            unsafe { ffi::coraza_waf_free(handle) };
-        }
     }
 }
 
@@ -744,6 +840,170 @@ mod validate_tests {
                 "plugin diagnostic carried non-empty path; hub-owned invariant violated: {:?}",
                 d.path.as_str()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod reload_tests {
+    //! Regression tests for the plugin's reload semantics. The hub
+    //! reloads by creating a NEW plugin instance, calling `init()` on
+    //! it, atomic-swapping the registry, then dropping the old
+    //! instance (see haproxy-spoa-hub `crates/hub/src/main.rs::reload_plugins`).
+    //! Linux's dlopen returns the same process-shared handle for the
+    //! same `.so` path, so the plugin's `static` data segment persists
+    //! across hub-level "loads" — i.e. across multiple `init()` calls
+    //! the plugin sees in one process. Any state that holds the live
+    //! WAF handle MUST therefore be replaceable on every init, not
+    //! one-shot.
+    //!
+    //! The bug this module exists to prevent: a `OnceLock<u64>` for
+    //! the WAF handle silently drops the second init's handle and
+    //! keeps serving requests with the first init's handle, which the
+    //! old plugin's Drop has already freed. Symptoms in production:
+    //! after HAPTIC pushes a hub config update with new SecRules,
+    //! coraza ignores the new rules — every request lands on the
+    //! WAF-engine-error path (action="deny", rule_id=0) instead of
+    //! either the new rules' decision or a fresh allow.
+    //!
+    //! Note on test isolation: this module's tests touch `WAF_HANDLE`
+    //! / `CONFIG`, which are crate-level statics. Running these tests
+    //! concurrently with anything else that calls `__init` would
+    //! corrupt that shared state. Today no other test does — keep it
+    //! that way, or wire up `serial_test` if a second `__init` caller
+    //! ever lands.
+
+    use super::*;
+    use haproxy_spoa_hub_plugin_api::{
+        ConfigValue, PluginContext, RHashMap, RString, SpoeMessage, SpoeValue,
+    };
+
+    fn make_context(directives: &str) -> PluginContext {
+        let mut config = RHashMap::new();
+        config.insert(
+            RString::from("directives"),
+            ConfigValue::String(directives.into()),
+        );
+        PluginContext {
+            name: RString::from("coraza"),
+            config,
+        }
+    }
+
+    fn make_check_request(path: &str) -> SpoeMessage {
+        let mut args = RHashMap::new();
+        args.insert(
+            RString::from("src-ip"),
+            SpoeValue::String("127.0.0.1".into()),
+        );
+        args.insert(RString::from("src-port"), SpoeValue::Int32(12345));
+        args.insert(
+            RString::from("dst-ip"),
+            SpoeValue::String("10.0.0.1".into()),
+        );
+        args.insert(RString::from("dst-port"), SpoeValue::Int32(80));
+        args.insert(RString::from("method"), SpoeValue::String("GET".into()));
+        args.insert(RString::from("path"), SpoeValue::String(path.into()));
+        args.insert(RString::from("query"), SpoeValue::String("".into()));
+        args.insert(
+            RString::from("version"),
+            SpoeValue::String("HTTP/1.1".into()),
+        );
+        args.insert(
+            RString::from("headers"),
+            SpoeValue::Binary(b"Host\0example.com\0".to_vec().into()),
+        );
+        SpoeMessage {
+            name: RString::from("check-request"),
+            args,
+            stream_id: 1,
+            frame_id: 1,
+        }
+    }
+
+    fn find_var<'a>(result: &'a ProcessingResult, name: &str) -> &'a SpoeValue {
+        &result
+            .variables
+            .iter()
+            .find(|v| v.name.as_str() == name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "plugin must emit `{name}` variable; got {:?}",
+                    result.variables
+                )
+            })
+            .value
+    }
+
+    /// After a reload, the new init's directives MUST be the ones
+    /// `process()` evaluates against. Mirrors the hub's reload
+    /// pipeline: build the new plugin first, init it, then drop the
+    /// old plugin last.
+    ///
+    /// With a `OnceLock<u64>` for the WAF handle this fails because
+    /// the second init's `WAF_HANDLE.set(h2)` returns `Err(_)`
+    /// silently and `process()` keeps reading the freed first handle.
+    /// The Go side's `getWAF(stale_handle)` errors out and returns
+    /// the deny-by-default WAF-engine-error result with `rule_id = 0`,
+    /// so we assert on `rule_id` matching the new init's SecRule id —
+    /// that's the only signal that distinguishes "the new WAF
+    /// processed this request" from "we hit the error path."
+    #[test]
+    fn process_after_reload_uses_new_init_waf() {
+        // Init #1 — first plugin instance with rule 9001 blocking /v1.
+        let mut plugin1 = CorazaPlugin::__new();
+        plugin1
+            .__init(&make_context(
+                "SecRuleEngine On\n\
+                 SecRule REQUEST_URI \"@beginsWith /v1\" \"id:9001,phase:1,deny,status:403\"\n",
+            ))
+            .expect("first init should succeed");
+
+        // Init #2 — new plugin instance with DIFFERENT rule 9002
+        // blocking /v2. Must run BEFORE plugin1 is dropped to mirror
+        // the hub's reload pipeline (build-new → init-new →
+        // atomic-swap → drop-old).
+        let mut plugin2 = CorazaPlugin::__new();
+        plugin2
+            .__init(&make_context(
+                "SecRuleEngine On\n\
+                 SecRule REQUEST_URI \"@beginsWith /v2\" \"id:9002,phase:1,deny,status:403\"\n",
+            ))
+            .expect("second init should succeed");
+
+        // Drop the old instance. With OnceLock-backed WAF_HANDLE this
+        // is what makes the bug observable: the freed handle is the
+        // only one `process()` knows about.
+        drop(plugin1);
+
+        // /v2 must match rule 9002 (in plugin2's directives) AND must
+        // NOT match rule 9001 (in plugin1's directives, which were
+        // supposed to be replaced).
+        let result = plugin2
+            .__process(&make_check_request("/v2"))
+            .expect("process should succeed");
+
+        let action = find_var(&result, "action");
+        let rule_id = find_var(&result, "rule_id");
+
+        match action {
+            SpoeValue::String(s) => assert_eq!(
+                s.as_str(),
+                "deny",
+                "second init's rule must enforce on /v2 after reload",
+            ),
+            other => panic!("action variable should be String, got {other:?}"),
+        }
+        match rule_id {
+            SpoeValue::Int32(id) => assert_eq!(
+                *id, 9002,
+                "rule_id must be the second init's rule (9002). \
+                 rule_id=0 means the WAF-engine-error path fired \
+                 (stale freed handle); rule_id=9001 means the first \
+                 init's WAF was used (also wrong — its directives are \
+                 supposed to have been replaced)",
+            ),
+            other => panic!("rule_id variable should be Int32, got {other:?}"),
         }
     }
 }
