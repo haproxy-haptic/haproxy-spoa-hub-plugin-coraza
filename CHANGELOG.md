@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-15
+
+### Added
+
+- **Prometheus metrics** via the `haproxy-spoa-hub` v0.6.0 plugin-API v2 vtable. The plugin emits counters / histograms through the hub's `/metrics` endpoint; all names appear under the `plugin_coraza_` prefix the hub adds. Requires hub v0.6.0+ for the dispatcher to install the recorder; the plugin loads on v0.5.x hubs too but emissions become silent no-ops.
+- Metric set:
+
+  | metric                         | kind      | labels                          |
+  |--------------------------------|-----------|---------------------------------|
+  | `evaluations_total`            | counter   | `phase`, `action`, `app`        |
+  | `evaluation_duration_seconds`  | histogram | `phase`, `app`                  |
+  | `denials_total`                | counter   | `phase`, `rule_id`, `app`       |
+
+  `phase` ∈ `{request, response}`; `action` is whatever the Coraza WAF returned (`allow` / `deny` / `detect`, etc.); `app` is the per-application name from `app_name` arg (empty string on the response path where the FFI looks up app by tx_id). `denials_total` is emitted only when `action="deny"` — separate counter so "which rules are blocking traffic" is a single PromQL query without a join.
+
+### Changed
+
+- Plugin-API dep bumped `^0.5` → `^0.6` to pick up the `MetricRecorder` helper and `metrics_static` macro arm. Vtable change is append-only, so v0.5.0 .so files still load on v0.5.x hubs (metrics silent there); see hub v0.6.0 CHANGELOG.
+
 ## [0.4.2] - 2026-05-05
 
 ### Fixed
