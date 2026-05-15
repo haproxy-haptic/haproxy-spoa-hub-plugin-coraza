@@ -2,7 +2,8 @@ use std::ffi::{CStr, c_char, c_int};
 use std::sync::{OnceLock, RwLock};
 
 use haproxy_spoa_hub_plugin_api::{
-    Diagnostic, ProcessingResult, RString, RVec, SpoeMessage, SpoeValue, TxnVariable, define_plugin,
+    Diagnostic, MetricRecorder, ProcessingResult, RString, RVec, SpoeMessage, SpoeValue,
+    TxnVariable, define_plugin,
 };
 
 use crate::config::PluginConfig;
@@ -49,6 +50,13 @@ struct State {
 }
 
 static STATE: OnceLock<RwLock<State>> = OnceLock::new();
+
+/// Plugin-scoped metric recorder. The `define_plugin!` `metrics_static`
+/// arm binds the hub's v2 recorder here once between `create` and
+/// `init`. With a v0.5.x hub (pre-vtable-v2) the install never fires
+/// and emissions are silent no-ops — plugin is forward-compatible
+/// with older hubs.
+static METRICS: MetricRecorder = MetricRecorder::new();
 
 fn state() -> &'static RwLock<State> {
     STATE.get_or_init(|| RwLock::new(State::default()))
@@ -225,6 +233,8 @@ define_plugin!(CorazaPlugin, {
         }
         diagnostics
     }
+
+    metrics_static = METRICS;
 });
 
 /// Compile a SecLang directives string via Coraza, return any
@@ -385,7 +395,8 @@ fn process_request(
             detect_only_flag,
         )
     };
-    let latency_us = start.elapsed().as_micros();
+    let elapsed = start.elapsed();
+    let latency_us = elapsed.as_micros();
 
     log::debug!(
         "coraza request: action={} rule_id={} latency_us={latency_us}",
@@ -393,10 +404,46 @@ fn process_request(
         result.rule_id,
     );
 
+    emit_eval_metrics("request", &result, app_name.unwrap_or(""), elapsed);
+
     let variables = result_to_variables(&result, &tx_id, false);
     result.free_data();
 
     Ok(ProcessingResult { variables })
+}
+
+/// Emit Prometheus metrics for one WAF evaluation. Called from both
+/// `process_request` and `process_response`; centralises the label
+/// shape so the two paths can't drift. Hub prefixes everything with
+/// `plugin_coraza_`.
+fn emit_eval_metrics(
+    phase: &str,
+    result: &ffi::CorazaResult,
+    app: &str,
+    elapsed: std::time::Duration,
+) {
+    let action = result.action_str();
+    METRICS.counter(
+        "evaluations_total",
+        &[("phase", phase), ("action", action), ("app", app)],
+        1,
+    );
+    METRICS.histogram(
+        "evaluation_duration_seconds",
+        &[("phase", phase), ("app", app)],
+        elapsed.as_secs_f64(),
+    );
+    // Denies are the operationally-critical signal: separate counter
+    // with the rule_id surfaces "which rules are blocking traffic"
+    // without joining counters.
+    if action == "deny" {
+        let rule_id_label = result.rule_id.to_string();
+        METRICS.counter(
+            "denials_total",
+            &[("phase", phase), ("rule_id", &rule_id_label), ("app", app)],
+            1,
+        );
+    }
 }
 
 fn process_response(
@@ -422,6 +469,7 @@ fn process_response(
     let version_c = to_cstring(version);
     let detect_only_flag = if detect_only { 1 } else { 0 };
 
+    let start = std::time::Instant::now();
     let result = unsafe {
         ffi::coraza_process_response(
             tx_id_c.as_ptr(),
@@ -434,6 +482,13 @@ fn process_response(
             detect_only_flag,
         )
     };
+    let elapsed = start.elapsed();
+
+    // No `app` label on the response path — the upstream coraza FFI
+    // looks up the app context by tx_id, not by an arg. Pass empty
+    // string for consistent labelset shape across phase=request and
+    // phase=response.
+    emit_eval_metrics("response", &result, "", elapsed);
 
     let variables = result_to_variables(&result, tx_id, true);
     result.free_data();
