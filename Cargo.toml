@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 # set_metric_recorder. Plugin loads on v0.5.x hubs too — the v2
 # vtable field is appended after v1, so v0.5.x hubs read only what
 # they know and the metric-recorder install becomes a no-op.
-haproxy-spoa-hub-plugin-api = "0.6"
+haproxy-spoa-hub-plugin-api = "0.7"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
