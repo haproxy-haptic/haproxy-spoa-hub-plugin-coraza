@@ -34,7 +34,7 @@ An operator configures the Coraza WAF plugin in their haproxy-spoa-hub deploymen
 
 ### User Story 2 - Outbound Response Inspection (Priority: P2)
 
-An operator enables response inspection to detect data leakage or other response-phase rule violations. After the backend responds, HAProxy forwards response metadata (status code, headers, body) to the plugin, which evaluates it against response-phase rules. The plugin returns a decision and metadata. Response inspection can optionally run in detect-only mode, where the plugin logs violations but does not block, returning the decision asynchronously to avoid adding latency to the response path.
+An operator enables response inspection to detect data leakage or other response-phase rule violations. After the backend responds, HAProxy forwards response metadata (status code, headers, body) to the plugin, which evaluates it against response-phase rules. The plugin returns a decision and metadata. Response inspection can optionally run in detect-only mode, where the completed WAF verdict is coerced to allow. Evaluation remains synchronous inside the hub's bounded admission permit so hostile responses cannot create unbounded background work.
 
 **Why this priority**: Response inspection completes the WAF evaluation lifecycle (phases 3-4 of ModSecurity/Coraza). Many CRS rules operate on responses (e.g., data leakage detection). However, many deployments can function with request-only inspection.
 
@@ -43,7 +43,7 @@ An operator enables response inspection to detect data leakage or other response
 **Acceptance Scenarios**:
 
 1. **Given** response inspection is enabled, **When** a backend response contains patterns matching a data leakage rule, **Then** the plugin returns `action=deny` with the matched rule ID.
-2. **Given** response inspection is enabled with detect-only mode, **When** a backend response triggers a rule, **Then** the plugin returns immediately (does not block the response) and logs the violation asynchronously.
+2. **Given** response inspection is enabled with detect-only mode, **When** a backend response triggers a rule, **Then** the plugin completes bounded evaluation and returns an allow verdict without spawning detached work.
 3. **Given** response inspection is disabled (default), **When** a response arrives, **Then** the plugin does not evaluate it and no response-phase variables are set.
 
 ---
@@ -79,7 +79,7 @@ An operator configures the Coraza WAF plugin via the hub's TOML configuration, s
 - **FR-002**: The plugin MUST return metadata variables: action type, HTTP status code to return on deny, matched rule ID, anomaly score, and the number of matched rules.
 - **FR-003**: The plugin MUST embed OWASP CRS v4 rules as a built-in default and support loading additional rules from the filesystem, merged on top of the embedded baseline.
 - **FR-004**: The plugin MUST support configurable request body buffering limits to prevent memory exhaustion.
-- **FR-005**: The plugin MUST support optional response-phase inspection with a detect-only async mode. Request-response correlation MUST use a transaction cache keyed by unique ID with a configurable TTL (default 10 seconds). Evicted transactions MUST be automatically closed.
+- **FR-005**: The plugin MUST support optional response-phase inspection with a synchronous detect-only verdict. Request-response correlation MUST use a transaction cache keyed by a process-unique ID with configurable TTL (default 10 seconds) and capacity (default 1024). Evicted transactions MUST be automatically closed and keep their originating WAF generation leased until completion.
 - **FR-006**: The plugin MUST support multiple independent WAF application configurations selectable per request.
 - **FR-007**: The plugin MUST expose a JSON schema for its configuration parameters to enable hub-side validation.
 - **FR-008**: The plugin MUST default to a deny action when the WAF engine state is uncertain or when rule evaluation fails.

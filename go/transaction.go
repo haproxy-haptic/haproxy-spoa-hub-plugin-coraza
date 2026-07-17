@@ -7,6 +7,7 @@ import "C"
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/corazawaf/coraza/v3/types"
@@ -39,7 +40,7 @@ type headerPair struct {
 // buildResult creates a coraza_result_t from a transaction's state.
 // It checks both Coraza's native interruption mechanism and CRS anomaly
 // scoring rules (949110/949111 for inbound, 959100 for outbound).
-func buildResult(tx types.Transaction, interrupted bool) C.coraza_result_t {
+func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool, matchedDataMaxBytes int) C.coraza_result_t {
 	result := allowResult()
 
 	matchedRules := tx.MatchedRules()
@@ -70,8 +71,8 @@ func buildResult(tx types.Transaction, interrupted bool) C.coraza_result_t {
 			result.rule_id = C.int(it.RuleID)
 			result.action = actionToCString(it.Action)
 			result.status = C.int(it.Status)
-			if it.Data != "" {
-				result.data = C.CString(it.Data)
+			if exposeMatchedData && it.Data != "" {
+				result.data = C.CString(boundedLogValue(it.Data, matchedDataMaxBytes))
 			}
 			return result
 		}
@@ -111,30 +112,21 @@ func coraza_process_request(
 	headersLen C.int,
 	body *C.char,
 	bodyLen C.int,
-	cacheTx C.int,
-	appName *C.char,
+	cacheTTLMS C.int,
+	maxCachedTransactions C.int,
 	detectOnly C.int,
+	exposeMatchedData C.int,
+	matchedDataMaxBytes C.int,
 ) (result C.coraza_result_t) {
 	defer recoverPanic("coraza_process_request")
 
-	// Resolve WAF instance
-	var handle uint64
-	if appName != nil {
-		goApp := C.GoString(appName)
-		handle = getWAFForApp(goApp)
-	} else {
-		handle = uint64(wafHandle)
-	}
-	if handle == 0 {
-		handle = defaultWAF
-	}
-
+	handle := uint64(wafHandle)
 	inst, err := getWAF(handle)
 	if err != nil {
 		setLastError(err)
 		metricsErrors.Add(1)
 		// Deny by default on WAF engine error
-		return denyResult()
+		return engineErrorResult(503)
 	}
 
 	// Create transaction
@@ -149,6 +141,7 @@ func coraza_process_request(
 	}
 
 	interrupted := false
+	processingError := false
 
 	// Phase 1: Connection
 	goSrcIP := C.GoString(srcIP)
@@ -186,7 +179,11 @@ func coraza_process_request(
 			goBody := C.GoBytes(unsafe.Pointer(body), bodyLen)
 			bodyIt, _, err := tx.WriteRequestBody(goBody)
 			if err != nil {
-				log.Error().Err(err).Msg("Error writing request body")
+				// Request-triggerable parse failures are surfaced through the
+				// error metric and fail-closed result. Avoid one log line per
+				// hostile request.
+				log.Debug().Msg("Error writing request body")
+				processingError = true
 			}
 			if bodyIt != nil {
 				interrupted = true
@@ -196,7 +193,8 @@ func coraza_process_request(
 		if !interrupted {
 			procIt, err := tx.ProcessRequestBody()
 			if err != nil {
-				log.Error().Err(err).Msg("Error processing request body")
+				log.Debug().Msg("Error processing request body")
+				processingError = true
 			}
 			if procIt != nil {
 				interrupted = true
@@ -204,12 +202,21 @@ func coraza_process_request(
 		}
 	}
 
-	result = buildResult(tx, interrupted)
+	if processingError {
+		// Never allow a body that Coraza could not inspect completely. A 400
+		// distinguishes malformed/unprocessable request data from an unavailable
+		// WAF engine (503).
+		result = engineErrorResult(400)
+		metricsErrors.Add(1)
+	} else {
+		result = buildResult(tx, interrupted, exposeMatchedData != 0, int(matchedDataMaxBytes))
+	}
 
-	// `result.status > 0` is the canonical deny indicator: allowResult()
-	// sets status=0; both the interruption branch and the CRS anomaly
-	// branch in buildResult set status to the HTTP code (403, etc).
-	denied := result.status != 0
+	// A disruptive action is a deny even if it has no HTTP status. Coraza's
+	// `drop` action deliberately carries status=0, so checking status alone
+	// would accidentally allow the exact requests that asked the proxy to
+	// terminate the connection.
+	denied := result.status != 0 || result.action != actionAllow
 
 	// Per-message detect-only override (specs/002-detect-only-request/).
 	// When set, the WAF still evaluated rules and result carries the
@@ -217,10 +224,33 @@ func coraza_process_request(
 	// verdict is coerced to allow so HAProxy lets the request through.
 	// The operator's HAProxy rules can act on the diagnostic fields
 	// (e.g., logging, shadow-banning) without blocking.
-	if denied && detectOnly != 0 {
+	if denied && detectOnly != 0 && !processingError {
 		result.action = actionAllow
 		result.status = 0
 		denied = false
+	}
+
+	// Cache transaction for response phase or close it. In detect-only
+	// mode the request is allowed through, so we WILL get a response —
+	// honour the cacheTx flag accordingly.
+	if cacheTTLMS > 0 && !denied {
+		cached := cacheTransaction(
+			goTxID,
+			tx,
+			handle,
+			time.Duration(cacheTTLMS)*time.Millisecond,
+			int(maxCachedTransactions),
+		)
+		if !cached {
+			metricsErrors.Add(1)
+			result = engineErrorResult(503)
+			denied = true
+			tx.ProcessLogging()
+			tx.Close()
+		}
+	} else {
+		tx.ProcessLogging()
+		tx.Close()
 	}
 
 	if denied {
@@ -229,16 +259,6 @@ func coraza_process_request(
 		metricsAllowed.Add(1)
 	}
 	metricsRulesHit.Add(int64(result.rules_hit))
-
-	// Cache transaction for response phase or close it. In detect-only
-	// mode the request is allowed through, so we WILL get a response —
-	// honour the cacheTx flag accordingly.
-	if cacheTx != 0 && !denied {
-		cacheTransaction(goTxID, tx)
-	} else {
-		tx.ProcessLogging()
-		tx.Close()
-	}
 
 	return result
 }
@@ -257,14 +277,15 @@ func coraza_process_response(
 	defer recoverPanic("coraza_process_response")
 
 	goTxID := C.GoString(txIDC)
-	tx := getCachedTransaction(goTxID)
-	if tx == nil {
+	entry := takeCachedTransaction(goTxID)
+	if entry == nil {
 		setLastError(fmt.Errorf("transaction %s not found in cache", goTxID))
 		metricsErrors.Add(1)
 		// Deny by default when transaction not found
-		return denyResult()
+		return engineErrorResult(503)
 	}
-	removeCachedTransaction(goTxID)
+	tx := entry.tx
+	defer releaseWAF(entry.wafHandle)
 
 	// Extract response data from C types (shared by both modes)
 	goVersion := C.GoString(httpVersion)
@@ -275,25 +296,23 @@ func coraza_process_response(
 		goBody = C.GoBytes(unsafe.Pointer(body), bodyLen)
 	}
 
-	// Detect-only mode: spawn goroutine, return immediately
-	if detectOnly != 0 {
-		cacheWg.Add(1)
-		go func() {
-			defer cacheWg.Done()
-			processResponsePhases(tx, goStatus, goVersion, hdrs, goBody)
-			tx.ProcessLogging()
-			tx.Close()
-		}()
-
-		metricsAllowed.Add(1)
-		return allowResult()
+	// Response evaluation always stays inside the hub's bounded plugin call.
+	// Fire-and-forget detect-only goroutines used to escape admission control and
+	// could accumulate without bound under attack.
+	interrupted, processingError := processResponsePhases(tx, goStatus, goVersion, hdrs, goBody)
+	if processingError {
+		result = engineErrorResult(502)
+		metricsErrors.Add(1)
+	} else {
+		result = buildResult(tx, interrupted, false, 0)
 	}
 
-	// Blocking mode: evaluate synchronously
-	interrupted := processResponsePhases(tx, goStatus, goVersion, hdrs, goBody)
-	result = buildResult(tx, interrupted)
+	if result.status != 0 && detectOnly != 0 && !processingError {
+		result.action = actionAllow
+		result.status = 0
+	}
 
-	if interrupted {
+	if result.status != 0 {
 		metricsBlocked.Add(1)
 	} else {
 		metricsAllowed.Add(1)
@@ -306,8 +325,9 @@ func coraza_process_response(
 }
 
 // processResponsePhases runs all response-phase WAF evaluations.
-func processResponsePhases(tx types.Transaction, statusCode int, httpVersion string, hdrs []headerPair, body []byte) bool {
+func processResponsePhases(tx types.Transaction, statusCode int, httpVersion string, hdrs []headerPair, body []byte) (bool, bool) {
 	interrupted := false
+	processingError := false
 
 	// Phase 3: Response headers
 	for _, h := range hdrs {
@@ -325,7 +345,8 @@ func processResponsePhases(tx types.Transaction, statusCode int, httpVersion str
 		if len(body) > 0 {
 			bodyIt, _, err := tx.WriteResponseBody(body)
 			if err != nil {
-				log.Error().Err(err).Msg("Error writing response body")
+				log.Debug().Msg("Error writing response body")
+				processingError = true
 			}
 			if bodyIt != nil {
 				interrupted = true
@@ -335,7 +356,8 @@ func processResponsePhases(tx types.Transaction, statusCode int, httpVersion str
 		if !interrupted {
 			procIt, err := tx.ProcessResponseBody()
 			if err != nil {
-				log.Error().Err(err).Msg("Error processing response body")
+				log.Debug().Msg("Error processing response body")
+				processingError = true
 			}
 			if procIt != nil {
 				interrupted = true
@@ -343,5 +365,5 @@ func processResponsePhases(tx types.Transaction, statusCode int, httpVersion str
 		}
 	}
 
-	return interrupted
+	return interrupted, processingError
 }

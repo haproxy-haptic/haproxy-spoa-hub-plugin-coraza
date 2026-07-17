@@ -14,7 +14,7 @@ typedef struct {
     int rule_id;        // 0 if no interruption
     const char *action; // "allow", "deny", "drop", "redirect" (pre-allocated, do NOT free)
     int status;         // HTTP status code (0 for allow)
-    const char *data;   // Redirect URL or empty (dynamically allocated if non-empty, free via coraza_free_string)
+    const char *data;   // Optional bounded interruption data (free via coraza_free_string when non-empty)
     int anomaly_score;  // CRS anomaly score (sum of matched rule severities)
     int rules_hit;      // Number of matched rules
 } coraza_result_t;
@@ -38,29 +38,26 @@ coraza_waf_t coraza_waf_new(
     const char *root_fs_path,
     int req_body_limit,
     int req_body_mem_limit,
-    int resp_body_limit
+    int resp_body_limit,
+    int rule_match_log,
+    int matched_data_log_mode,
+    int matched_data_max_bytes
 );
 
 int coraza_waf_rules_count(coraza_waf_t waf);
 void coraza_waf_free(coraza_waf_t waf);
+int coraza_waf_active_count(void);
 ```
 
-### WAF Application Routing
-
-```c
-// Set the default WAF used when no app name is specified.
-void coraza_set_default_waf(coraza_waf_t waf);
-
-// Map an application name to a specific WAF instance.
-void coraza_set_app_waf(const char *app_name, coraza_waf_t waf);
-```
+Application routing is owned by the Rust plugin generation. It selects a WAF
+handle before crossing the FFI boundary; the Go archive has no process-global
+application map.
 
 ### Request Processing (batched)
 
 ```c
 // Process a complete HTTP request in a single FFI call.
 // Headers format: "Key1\0Value1\0Key2\0Value2\0" (null-separated pairs)
-// app_name: optional application name for multi-app routing (null = default)
 coraza_result_t coraza_process_request(
     coraza_waf_t waf_handle,
     const char *tx_id,
@@ -76,8 +73,11 @@ coraza_result_t coraza_process_request(
     int headers_len,
     const char *body,
     int body_len,
-    int cache_tx,
-    const char *app_name
+    int cache_ttl_ms,
+    int max_cached_transactions,
+    int detect_only,
+    int expose_matched_data,
+    int matched_data_max_bytes
 );
 ```
 
@@ -97,11 +97,8 @@ coraza_result_t coraza_process_response(
 );
 ```
 
-### Cache Configuration
-
-```c
-void coraza_set_cache_ttl(int ttl_ms);
-```
+Cache TTL and capacity are passed with each request. This keeps concurrently
+live reload generations from overwriting process-global cache settings.
 
 ### Metrics
 
@@ -110,7 +107,6 @@ int64_t coraza_metrics_allowed(void);
 int64_t coraza_metrics_blocked(void);
 int64_t coraza_metrics_rules_hit(void);
 int64_t coraza_metrics_errors(void);
-void coraza_metrics_reset(void);
 ```
 
 ### Utilities
@@ -124,8 +120,8 @@ void coraza_free_string(char *s);
 // Caller must free the returned string via coraza_free_string().
 char *coraza_last_error(void);
 
-// Graceful shutdown: drain pending async evaluations, close all cached
-// transactions, stop background goroutines, destroy all WAF instances.
+// Graceful shutdown: close cached transactions, stop the evictor, and retire
+// all WAF instances.
 void coraza_shutdown(void);
 ```
 
@@ -142,16 +138,17 @@ void coraza_shutdown(void);
 
 ## Thread Safety
 
-- `coraza_waf_new`, `coraza_waf_free`, `coraza_set_default_waf`,
-  `coraza_set_app_waf`: NOT thread-safe. Call during init/shutdown only.
+- `coraza_waf_new` and `coraza_waf_free`: thread-safe. A freed handle is
+  retired after its last cached transaction releases its lease.
 - `coraza_process_request`, `coraza_process_response`: Thread-safe.
 - `coraza_metrics_*`: Thread-safe (atomic counters).
 - `coraza_shutdown`: NOT thread-safe. Call once after all processing stops.
 
 ## Error Handling
 
-- Functions that can fail return 0/NULL or set action to "deny" (FR-008).
+- Functions that can fail return 0/NULL or an explicit deny result (FR-008).
 - `coraza_last_error()` returns the most recent error message.
-- Go panics are recovered via `defer recover()` and converted to errors.
+- Go panics are recovered via `defer recover()` and converted to generic errors
+  without logging or returning the panic payload.
 - The Rust side defaults `action_str()` to "deny" if the action pointer
   is null (deny-by-default per FR-008).

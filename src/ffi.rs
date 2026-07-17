@@ -21,10 +21,14 @@ unsafe extern "C" {
         req_body_limit: c_int,
         req_body_mem_limit: c_int,
         resp_body_limit: c_int,
+        rule_match_log: c_int,
+        matched_data_log_mode: c_int,
+        matched_data_max_bytes: c_int,
     ) -> u64;
 
     pub fn coraza_waf_rules_count(waf: u64) -> c_int;
     pub fn coraza_waf_free(waf: u64);
+    pub fn coraza_waf_active_count() -> c_int;
 
     // Request processing
     pub fn coraza_process_request(
@@ -42,9 +46,11 @@ unsafe extern "C" {
         headers_len: c_int,
         body: *const c_char,
         body_len: c_int,
-        cache_tx: c_int,
-        app_name: *const c_char,
+        cache_ttl_ms: c_int,
+        max_cached_transactions: c_int,
         detect_only: c_int,
+        expose_matched_data: c_int,
+        matched_data_max_bytes: c_int,
     ) -> CorazaResult;
 
     // Response processing
@@ -67,13 +73,6 @@ unsafe extern "C" {
         directives: *const c_char,
         directives_len: c_int,
     ) -> *mut c_char;
-
-    // Cache configuration
-    pub fn coraza_set_cache_ttl(ttl_ms: c_int);
-
-    // WAF app routing
-    pub fn coraza_set_default_waf(waf: u64);
-    pub fn coraza_set_app_waf(app_name: *const c_char, waf: u64);
 
     // Utilities
     pub fn coraza_free_string(s: *mut c_char);

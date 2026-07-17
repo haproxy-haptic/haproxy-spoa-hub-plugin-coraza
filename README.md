@@ -20,7 +20,7 @@ For cross-compilation:
 ## Build
 
 ```bash
-cargo build --release
+make build-release
 # Output: target/release/libcoraza_plugin.so
 ```
 
@@ -36,13 +36,18 @@ name = "coraza"
 library = "libcoraza_plugin.so"
 messages = ["check-request"]
 timeout_ms = 15
+max_concurrency = 2
+max_queue = 0
 
 [plugins.params]
 directives = """
-SecRuleEngine On
 Include @coraza.conf-recommended
+SecRxPreFilter On
+SecRequestBodyAccess On
+SecRequestBodyLimitAction Reject
 Include @crs-setup.conf.example
 Include @owasp_crs/*.conf
+SecRuleEngine On
 """
 request_body_limit = 131072
 request_body_in_memory_limit = 131072
@@ -58,8 +63,27 @@ request_body_in_memory_limit = 131072
 | `request_body_in_memory_limit` | int | 4096 | Max body bytes in memory |
 | `response_body_limit` | int | 4096 | Max response body bytes to buffer |
 | `response_check` | bool | false | Enable response-phase inspection |
-| `detect_only` | bool | false | Log-only mode (non-blocking) |
+| `detect_only` | bool | false | Default log-only verdict for request and response inspection |
 | `transaction_ttl_ms` | int | 10000 | TTL for cached transactions |
+| `max_cached_transactions` | int | 1024 | Hard cap on response-correlation transactions; requests fail closed when full |
+| `rule_match_log` | bool | false | Emit a warning per matched rule; disabled by default to avoid log amplification |
+| `matched_data_log` | string | `none` | Matched-data logging mode: `none`, `hash`, or bounded `truncate` |
+| `matched_data_max_bytes` | int | 128 | Bound for truncated logs and exposed matched data |
+| `expose_matched_data` | bool | false | Expose bounded interruption data as a transaction variable |
+| `applications` | table | empty | Named WAF policies; omitted fields inherit the effective top-level policy |
+
+Request-body access is controlled by SecLang, not by the numeric limit alone.
+Use `SecRequestBodyAccess Off` for header/URI-only policies and
+`SecRequestBodyAccess On` only when the integration guarantees that the complete,
+bounded body is passed with `body-mode=buffered` and `body-complete=true`.
+`SecRequestBodyLimitAction Reject` avoids partial-inspection bypasses.
+Missing `body-mode` is treated as `none`; body inspection is never inferred
+from whatever bytes happen to be present in HAProxy's request buffer.
+
+`applications` are compiled as an atomic generation. A reload becomes visible
+only after the default policy and every named policy compile successfully; a
+failed candidate leaves the serving generation untouched. Unknown application
+names are errors rather than silently falling back to the default policy.
 
 ### HAProxy SPOE Configuration
 
@@ -72,12 +96,12 @@ The plugin sets these variables in HAProxy (prefixed with `hub.<plugin_name>.`):
 | Variable | Type | Description |
 |----------|------|-------------|
 | `id` | string | Transaction ID |
-| `action` | string | "allow" or "deny" |
-| `status` | int | HTTP status code (0=allow, 403=deny) |
+| `action` | string | `allow`, `deny`, `drop`, or `redirect` |
+| `status` | int | HTTP status code; `drop` is disruptive even though its status is 0 |
 | `rule_id` | int | Matched rule ID |
 | `anomaly_score` | int | CRS anomaly score |
 | `rules_hit` | int | Number of matched rules |
-| `data` | string | Redirect URL (when action=redirect) |
+| `data` | string | Bounded interruption data; absent unless `expose_matched_data=true` |
 
 ## Migration from coraza-spoa
 
@@ -93,30 +117,33 @@ The plugin sets these variables in HAProxy (prefixed with `hub.<plugin_name>.`):
 
 ## Performance Tuning
 
-For production deployments:
+Keep the Go runtime under the container limit, but leave garbage collection
+enabled. Disabling GC allows hostile request traffic to grow the process until
+the kernel kills it.
 
 ```bash
-# Reduce Go GC pressure
-export GOGC=off
-export GOMEMLIMIT=<85% of available memory>
+# Example for a 256 MiB container limit; leave headroom for Rust, CRS, and libc.
+export GOMEMLIMIT=192MiB
 ```
 
-The plugin uses Coraza build tags for optimized rule evaluation:
-- `coraza.rule.rx_prefilter` - skip regex when pre-filter determines no match
-- `coraza.rule.multiphase_evaluation` - evaluate rules in earlier phases
-- `coraza.rule.no_regex_multiline` - disable multiline regex
+The build uses the stable `coraza.rule.multiphase_evaluation` and
+`coraza.rule.no_regex_multiline` tags. Regex pre-filtering is enabled through the
+public runtime directive `SecRxPreFilter On`; Coraza does not guarantee internal
+build-tag compatibility across minor releases.
+
+Set hub-side `max_concurrency` explicitly and keep `max_queue=0` on public
+edges unless a short, measured queue is preferable to immediate overload. A
+timed-out native evaluation keeps its concurrency permit until it really exits,
+so repeated slow calls cannot create an unbounded blocking backlog.
 
 ## Testing
 
 ```bash
-# Go unit tests
-cd go && go test -v -tags "coraza.rule.rx_prefilter,coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline" ./...
+# Formatting, lint, Go race tests, and Rust tests
+make check
 
-# Rust tests
-cargo test
-
-# E2E tests (requires Docker)
-cd tests/e2e && make test
+# Full Docker E2E suite
+make test-e2e
 ```
 
 ## License

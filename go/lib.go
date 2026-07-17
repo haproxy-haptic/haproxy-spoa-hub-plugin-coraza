@@ -15,9 +15,11 @@ import (
 // recoverPanic catches Go panics in FFI exports to prevent crashing
 // the host process. It logs the panic and sets the last error.
 func recoverPanic(name string) {
-	if r := recover(); r != nil {
-		err := fmt.Errorf("panic in %s: %v", name, r)
-		log.Error().Str("function", name).Interface("panic", r).Msg("recovered panic in FFI export")
+	if recover() != nil {
+		// Panic values from parsers can contain request bytes. Keep both logs and
+		// the Rust-visible error generic so a failure cannot exfiltrate payloads.
+		err := fmt.Errorf("panic in %s", name)
+		log.Error().Str("function", name).Msg("recovered panic in FFI export")
 		setLastError(err)
 		metricsErrors.Add(1)
 	}
@@ -54,8 +56,13 @@ func actionToCString(action string) *C.char {
 		return actionDrop
 	case "redirect":
 		return actionRedirect
-	default:
+	case "allow":
 		return actionAllow
+	default:
+		// This function is called for an actual Coraza interruption. An
+		// unfamiliar disruptive action must fail closed rather than silently
+		// turning into allow after an engine upgrade or custom action.
+		return actionDeny
 	}
 }
 
@@ -63,6 +70,14 @@ func denyResult() C.coraza_result_t {
 	return C.coraza_result_t{
 		action: actionDeny,
 		status: 403,
+		data:   emptyStr,
+	}
+}
+
+func engineErrorResult(status int) C.coraza_result_t {
+	return C.coraza_result_t{
+		action: actionDeny,
+		status: C.int(status),
 		data:   emptyStr,
 	}
 }
@@ -87,6 +102,9 @@ func coraza_waf_new(
 	reqBodyLimit C.int,
 	reqBodyMemLimit C.int,
 	respBodyLimit C.int,
+	ruleMatchLog C.int,
+	matchedDataLogMode C.int,
+	matchedDataMaxBytes C.int,
 ) (ret C.uint64_t) {
 	defer recoverPanic("coraza_waf_new")
 	goDirectives := C.GoStringN(directives, directivesLen)
@@ -108,6 +126,9 @@ func coraza_waf_new(
 		int(reqBodyLimit),
 		int(reqBodyMemLimit),
 		int(respBodyLimit),
+		ruleMatchLog != 0,
+		int(matchedDataLogMode),
+		int(matchedDataMaxBytes),
 	)
 	if err != nil {
 		setLastError(err)
@@ -133,6 +154,12 @@ func coraza_waf_free(waf C.uint64_t) {
 	destroyWAF(uint64(waf))
 }
 
+//export coraza_waf_active_count
+func coraza_waf_active_count() (ret C.int) {
+	defer recoverPanic("coraza_waf_active_count")
+	return C.int(activeWAFCount())
+}
+
 //export coraza_free_string
 func coraza_free_string(s *C.char) {
 	defer recoverPanic("coraza_free_string")
@@ -153,27 +180,6 @@ func coraza_last_error() (ret *C.char) {
 		return nil
 	}
 	return C.CString(err)
-}
-
-//export coraza_set_cache_ttl
-func coraza_set_cache_ttl(ttlMs C.int) {
-	defer recoverPanic("coraza_set_cache_ttl")
-	setCacheTTL(int(ttlMs))
-}
-
-//export coraza_set_default_waf
-func coraza_set_default_waf(waf C.uint64_t) {
-	defer recoverPanic("coraza_set_default_waf")
-	defaultWAF = uint64(waf)
-}
-
-//export coraza_set_app_waf
-func coraza_set_app_waf(appName *C.char, waf C.uint64_t) {
-	defer recoverPanic("coraza_set_app_waf")
-	name := C.GoString(appName)
-	appWAFsMu.Lock()
-	appWAFs[name] = uint64(waf)
-	appWAFsMu.Unlock()
 }
 
 //export coraza_shutdown

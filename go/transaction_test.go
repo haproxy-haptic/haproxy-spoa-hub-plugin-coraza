@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // setupTestWAF creates a WAF instance with embedded CRS for testing.
@@ -14,7 +13,7 @@ Include @coraza.conf-recommended
 Include @crs-setup.conf.example
 Include @owasp_crs/*.conf`
 
-	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096)
+	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
 	if err != nil {
 		t.Fatalf("setupTestWAF: %v", err)
 	}
@@ -163,14 +162,17 @@ func TestProcessResponseGo_CachedTransaction(t *testing.T) {
 	tx.ProcessRequestHeaders()
 	tx.ProcessRequestBody()
 
-	cacheTransaction("resp-test-1", tx)
+	if !cacheTransaction("resp-test-1", tx, handle, 10_000_000_000, 10) {
+		t.Fatal("expected transaction to be cached")
+	}
 
 	// Retrieve and process response phase
-	cached := getCachedTransaction("resp-test-1")
-	if cached == nil {
+	entry := takeCachedTransaction("resp-test-1")
+	if entry == nil {
 		t.Fatal("expected cached transaction")
 	}
-	removeCachedTransaction("resp-test-1")
+	defer releaseWAF(entry.wafHandle)
+	cached := entry.tx
 
 	cached.AddResponseHeader("Content-Type", "text/html")
 	it := cached.ProcessResponseHeaders(200, "HTTP/1.1")
@@ -188,7 +190,7 @@ func TestProcessResponseGo_CachedTransaction(t *testing.T) {
 	cached.Close()
 }
 
-func TestDetectOnlyMode(t *testing.T) {
+func TestDetectOnlyResponseProcessingRemainsSynchronous(t *testing.T) {
 	handle := setupTestWAF(t)
 	defer destroyWAF(handle)
 
@@ -202,34 +204,24 @@ func TestDetectOnlyMode(t *testing.T) {
 	tx.ProcessRequestHeaders()
 	tx.ProcessRequestBody()
 
-	cacheTransaction("detect-only-test", tx)
+	if !cacheTransaction("detect-only-test", tx, handle, 10_000_000_000, 10) {
+		t.Fatal("expected transaction to be cached")
+	}
 
-	// Simulate detect-only: copy data, process in background
+	// Detect-only changes the verdict, not the execution boundary: response
+	// inspection must stay inside the hub's bounded plugin call.
 	hdrs := []headerPair{{key: "Content-Type", value: "text/html"}}
 	body := []byte("<html>response</html>")
 
-	cached := getCachedTransaction("detect-only-test")
-	if cached == nil {
+	entry := takeCachedTransaction("detect-only-test")
+	if entry == nil {
 		t.Fatal("expected cached transaction")
 	}
-	removeCachedTransaction("detect-only-test")
-
-	// Process in background (simulating detect-only)
-	done := make(chan struct{})
-	cacheWg.Add(1)
-	go func() {
-		defer cacheWg.Done()
-		processResponsePhases(cached, 200, "HTTP/1.1", hdrs, body)
-		cached.ProcessLogging()
-		cached.Close()
-		close(done)
-	}()
-
-	// Should complete without blocking
-	select {
-	case <-done:
-		// Background processing completed
-	case <-time.After(5 * time.Second):
-		t.Fatal("detect-only background processing timed out")
+	defer releaseWAF(entry.wafHandle)
+	interrupted, processingError := processResponsePhases(entry.tx, 200, "HTTP/1.1", hdrs, body)
+	if interrupted || processingError {
+		t.Fatalf("benign response should process cleanly: interrupted=%v error=%v", interrupted, processingError)
 	}
+	entry.tx.ProcessLogging()
+	entry.tx.Close()
 }

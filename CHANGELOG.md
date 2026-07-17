@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-18
+
+### Added
+
+- Request messages support explicit `body-mode=none|buffered` and require
+  `body-complete=true` for buffered inspection, preventing accidental WAF
+  decisions over truncated request bodies.
+- Bounded response-correlation storage through `max_cached_transactions`,
+  with generation leases, synchronous expired-entry reclamation under
+  pressure, and fail-closed admission when the cap is exhausted.
+- Payload-safe observability controls: rule-match logging is disabled by
+  default, matched data can be omitted, hashed, or sanitized and truncated,
+  and HAProxy matched-data exposure is separately opt-in.
+
+### Changed
+
+- WAF generations are plugin-instance-owned, compiled completely before an
+  atomic swap, and retired only after cached transactions from that generation
+  finish. Failed or repeated reloads no longer leak handles or disturb the
+  serving policy.
+- Unknown application names now fail closed instead of falling back to the
+  default WAF. Named applications inherit effective top-level body limits and
+  directive files for fields they do not override.
+- Response detect-only evaluation is synchronous inside the hub's bounded
+  plugin execution permit; it no longer creates unbounded background
+  goroutines.
+- Transaction identifiers include a process-wide sequence, avoiding response
+  cache collisions across SPOP connections and HAProxy processes.
+- The standalone default enables `SecRxPreFilter` through the public runtime
+  directive and places `SecRuleEngine On` after the recommended configuration
+  so enforcement is not reset to detection-only.
+- Development and release workflows are available through Make targets; Go
+  tests run with the race detector and stable Coraza build tags.
+
+### Fixed
+
+- Coraza `drop` and unknown disruptive actions now fail closed even when no HTTP status is attached.
+- Missing request `body-mode` defaults to header-only inspection, and request-triggerable parse failures stay at debug log level to prevent partial-body bypasses and log amplification.
+- Request/response body processing errors and cache exhaustion fail closed with
+  explicit engine status codes; detect-only cannot coerce engine failures into
+  allows.
+- Interior null bytes, oversized FFI lengths, malformed validator output, and
+  partial application-generation failures are rejected without memory-unsafe
+  fallback behavior.
+- Request-derived matched data and panic payloads are no longer logged or
+  returned by default.
+
 ## [0.5.0] - 2026-05-15
 
 ### Added

@@ -20,14 +20,17 @@ fn main() {
         other => panic!("Unsupported target: {other}"),
     };
 
-    // Build Go c-archive with performance build tags
+    // Build the Go c-archive with the stable engine behavior tags. Regex
+    // pre-filtering is configured with the runtime `SecRxPreFilter` directive;
+    // the old build tag was an internal implementation switch without minor-
+    // version compatibility guarantees.
     let mut cmd = Command::new("go");
     cmd.current_dir(&go_dir)
         .args([
             "build",
             "-buildmode=c-archive",
             "-tags",
-            "coraza.rule.rx_prefilter,coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline",
+            "coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline",
             "-o",
         ])
         .arg(&archive_path)
