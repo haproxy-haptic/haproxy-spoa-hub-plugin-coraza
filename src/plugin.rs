@@ -1,5 +1,11 @@
 use std::ffi::{CStr, c_char, c_int};
-use std::sync::{OnceLock, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{
+        RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use haproxy_spoa_hub_plugin_api::{
     Diagnostic, MetricRecorder, ProcessingResult, RString, RVec, SpoeMessage, SpoeValue,
@@ -9,47 +15,83 @@ use haproxy_spoa_hub_plugin_api::{
 use crate::config::PluginConfig;
 use crate::ffi::{self, CorazaResult, to_cstring};
 
-// Plugin state lives in a process-global `RwLock<State>` rather than
-// on the `CorazaPlugin` struct because the upstream `define_plugin!`
-// macro (macro_rules! in `haproxy-spoa-hub-plugin-api`) does not
-// expose the `&self` / `&mut self` receiver inside the user-supplied
-// init/process bodies — `self.field` in those bodies fails to bind to
-// the generated method's receiver under Rust 2024 macro hygiene
-// rules. Storing the WAF handle and config in a `static` and gating
-// access with `RwLock` keeps the bodies free of `self.field`.
-//
-// The previous design used `OnceLock<u64>` for the WAF handle, which
-// silently dropped the second init's handle on hub reload. Linux's
-// dlopen returns the same process-shared `.so` data segment, so the
-// static persists across hub-level "loads", and `OnceLock::set`
-// returns Err on every init except the first. `process()` kept using
-// the first init's handle, which the *first* Drop had already freed,
-// so every request post-reload landed on the WAF-engine-error path
-// (`action="deny", rule_id=0`) — defeating ADR-0007's hot-reload
-// guarantee for HAPTIC. See `reload_tests::process_after_reload_uses_new_init_waf`.
-//
-// The new design swaps both fields under one write lock per `init()`
-// and frees the previous handle in the same critical section. Reads
-// in `process()` take the read lock for the duration of the
-// `coraza_process_request` FFI call, so a reload that runs in
-// parallel waits for in-flight requests to finish before swapping —
-// no use-after-free on the Go side, no need for per-instance Drop
-// tracking, no `OnceLock` on the hot path.
+static TX_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
-/// Combined latest-config + latest-WAF-handle. Wrapped in a single
-/// `RwLock` so init swaps both atomically and `process()` reads both
-/// against the same generation.
-#[derive(Default)]
-struct State {
-    /// WAF handle returned by the Go FFI for the latest `init()`
-    /// call. `0` before the first init runs.
-    waf_handle: u64,
-    /// Plugin config from the latest `init()` call. `Default` until
-    /// the first init runs.
-    config: PluginConfig,
+#[derive(Debug)]
+struct WafHandle(u64);
+
+impl Drop for WafHandle {
+    fn drop(&mut self) {
+        unsafe { ffi::coraza_waf_free(self.0) };
+    }
 }
 
-static STATE: OnceLock<RwLock<State>> = OnceLock::new();
+/// One completely compiled, immutable plugin generation. It is built off to
+/// the side and installed only after every application WAF succeeds, so failed
+/// hub reloads cannot mutate the generation still serving traffic.
+#[derive(Debug)]
+struct WafGeneration {
+    default: WafHandle,
+    applications: HashMap<String, WafHandle>,
+}
+
+impl WafGeneration {
+    fn build(config: &PluginConfig) -> Result<Self, String> {
+        let default = WafHandle(create_waf(
+            &config.directives,
+            config.directives_file.as_deref(),
+            config.request_body_limit,
+            config.request_body_in_memory_limit,
+            config.response_body_limit,
+            config,
+        )?);
+        let rules_count = unsafe { ffi::coraza_waf_rules_count(default.0) };
+        log::info!("Coraza default WAF initialized with {rules_count} rules");
+
+        let mut applications = HashMap::with_capacity(config.applications.len());
+        for app in &config.applications {
+            let handle = WafHandle(
+                create_waf(
+                    &app.directives,
+                    app.directives_file.as_deref(),
+                    app.request_body_limit,
+                    app.request_body_in_memory_limit,
+                    app.response_body_limit,
+                    config,
+                )
+                .map_err(|error| format!("application '{}': {error}", app.name))?,
+            );
+            let app_rules = unsafe { ffi::coraza_waf_rules_count(handle.0) };
+            log::info!(
+                "Coraza WAF app '{}' initialized with {app_rules} rules",
+                app.name
+            );
+            applications.insert(app.name.clone(), handle);
+        }
+
+        Ok(Self {
+            default,
+            applications,
+        })
+    }
+
+    fn select<'a>(&self, application: Option<&'a str>) -> Result<(u64, &'a str), String> {
+        match application.filter(|name| !name.is_empty()) {
+            None => Ok((self.default.0, "")),
+            Some(name) => self
+                .applications
+                .get(name)
+                .map(|handle| (handle.0, name))
+                .ok_or_else(|| format!("unknown Coraza application policy '{name}'")),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct State {
+    generation: Option<WafGeneration>,
+    config: PluginConfig,
+}
 
 /// Plugin-scoped metric recorder. The `define_plugin!` `metrics_static`
 /// arm binds the hub's v2 recorder here once between `create` and
@@ -58,43 +100,16 @@ static STATE: OnceLock<RwLock<State>> = OnceLock::new();
 /// with older hubs.
 static METRICS: MetricRecorder = MetricRecorder::new();
 
-fn state() -> &'static RwLock<State> {
-    STATE.get_or_init(|| RwLock::new(State::default()))
-}
-
-/// Acquire the state for reading, recovering through poisoned locks.
-///
-/// Lock poisoning happens when a writer panics mid-update. In our
-/// case the only writer is `init()`, and the data invariants it
-/// maintains are simple — both fields are plain values (`u64` and a
-/// `PluginConfig` clone) that are written together but never observed
-/// in a "half-applied" form, since the swap is `previous = mem::replace`-
-/// style. So a poisoned lock is safe to read through with
-/// `into_inner()`: callers see either the previous coherent state
-/// (init panicked before the assignments) or the new coherent state
-/// (init panicked after). The alternative — propagating the
-/// `PoisonError` as a panic on every subsequent `process()` call —
-/// would mean a single rare init panic permanently jams the SPOE
-/// worker pool, exactly the cascading failure mode we exist to
-/// prevent.
-fn state_read() -> std::sync::RwLockReadGuard<'static, State> {
-    state().read().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Acquire the state for writing, recovering through poisoned locks.
-/// Same rationale as `state_read` — every `init()` overwrites the
-/// state in full, so a partial/inconsistent prior state is also safe
-/// to overwrite.
-fn state_write() -> std::sync::RwLockWriteGuard<'static, State> {
-    state().write().unwrap_or_else(|e| e.into_inner())
-}
-
 #[derive(Debug)]
-struct CorazaPlugin;
+struct CorazaPlugin {
+    state: RwLock<State>,
+}
 
 define_plugin!(CorazaPlugin, {
     fn new() -> Self {
-        CorazaPlugin
+        CorazaPlugin {
+            state: RwLock::new(State::default()),
+        }
     }
 
     fn init(
@@ -103,68 +118,17 @@ define_plugin!(CorazaPlugin, {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = PluginConfig::from_context(context);
 
-        // Create default WAF instance
-        let handle = create_waf(
-            &config.directives,
-            config.directives_file.as_deref(),
-            config.request_body_limit,
-            config.request_body_in_memory_limit,
-            config.response_body_limit,
-        )
-        .map_err(|e| format!("Failed to create WAF: {e}"))?;
+        let generation = WafGeneration::build(&config)
+            .map_err(|error| format!("failed to build Coraza generation: {error}"))?;
 
-        let rules_count = unsafe { ffi::coraza_waf_rules_count(handle) };
-        log::info!("Coraza WAF initialized with {rules_count} rules");
-
-        unsafe { ffi::coraza_set_default_waf(handle) };
-
-        // Create per-application WAF instances
-        for app in &config.applications {
-            let app_handle = create_waf(
-                &app.directives,
-                app.directives_file.as_deref(),
-                app.request_body_limit,
-                app.request_body_in_memory_limit,
-                app.response_body_limit,
-            )
-            .map_err(|e| format!("Failed to create WAF for app '{}': {e}", app.name))?;
-
-            let app_rules = unsafe { ffi::coraza_waf_rules_count(app_handle) };
-            log::info!(
-                "Coraza WAF app '{}' initialized with {app_rules} rules",
-                app.name
-            );
-
-            let app_name_c = to_cstring(&app.name);
-            unsafe { ffi::coraza_set_app_waf(app_name_c.as_ptr(), app_handle) };
-        }
-
-        // Configure cache TTL
-        if config.response_check {
-            unsafe { ffi::coraza_set_cache_ttl(config.transaction_ttl_ms as c_int) };
-        }
-
-        // Atomic swap-and-replace: take the previous handle out,
-        // install the new one + config in the same critical section.
-        // The write lock blocks until in-flight `process()` calls
-        // (which hold the read lock) finish, so no SPOE worker is
-        // mid-FFI on the previous handle when we free it below.
-        let previous_handle = {
-            let mut s = state_write();
-            let previous = s.waf_handle;
-            s.waf_handle = handle;
-            s.config = config;
-            previous
+        let mut state = self
+            .state
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        *state = State {
+            generation: Some(generation),
+            config,
         };
-
-        if previous_handle != 0 {
-            // Free the prior WAF instance — there are no live readers
-            // of it after the swap above, so the Go-side WAFs map
-            // can drop it safely. Don't call `coraza_shutdown()`: the
-            // Go runtime is process-global and shared with the rest
-            // of the spoa-hub binary.
-            unsafe { ffi::coraza_waf_free(previous_handle) };
-        }
 
         Ok(())
     }
@@ -181,14 +145,17 @@ define_plugin!(CorazaPlugin, {
         &self,
         message: &SpoeMessage,
     ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
-        // Hold the read lock across the FFI call so a parallel
-        // `init()` waits for us to finish before swapping the handle.
-        // Without that, a freed-handle race surfaces as spurious
-        // `action="deny", rule_id=0` errors during reload.
-        let s = state_read();
+        let state = self.state.read().unwrap_or_else(|error| error.into_inner());
         match message.name.as_str() {
-            "check-request" => process_request(message, &s.config, s.waf_handle),
-            "check-response" => process_response(message, &s.config),
+            "check-request" => {
+                let generation = state
+                    .generation
+                    .as_ref()
+                    .ok_or("Coraza plugin has not been initialized")?;
+                let (handle, selected_app) = generation.select(message.get_string("app"))?;
+                process_request(message, &state.config, handle, selected_app)
+            }
+            "check-response" => process_response(message, &state.config),
             _ => Ok(ProcessingResult::empty()),
         }
     }
@@ -243,12 +210,13 @@ fn validate_directives_string(directives: &str) -> Vec<Diagnostic> {
     if directives.is_empty() {
         return Vec::new();
     }
-    // Use the length of the *converted* CString, not `directives.len()`.
-    // `to_cstring` falls back to an empty string when the input
-    // contains an interior null byte, so passing the original length
-    // would have the Go side read past the end of the empty buffer
-    // (out-of-bounds read). After conversion, `dir_c.as_bytes().len()`
-    // is the actual byte count of the string Go will see.
+    if directives.as_bytes().contains(&0) {
+        return vec![Diagnostic::error(
+            0,
+            0,
+            "directives contain an interior null byte; refusing an ambiguous FFI string",
+        )];
+    }
     let dir_c = to_cstring(directives);
     let dir_len = match c_int::try_from(dir_c.as_bytes().len()) {
         Ok(n) => n,
@@ -286,7 +254,13 @@ fn parse_validation_json(json: &str) -> Vec<Diagnostic> {
     }
     let captured: Vec<CapturedDiagnostic> = match serde_json::from_str(json) {
         Ok(v) => v,
-        Err(_) => return Vec::new(),
+        Err(error) => {
+            return vec![Diagnostic::error(
+                0,
+                0,
+                format!("Coraza validator returned malformed diagnostics: {error}"),
+            )];
+        }
     };
     captured
         .into_iter()
@@ -304,14 +278,10 @@ impl Drop for CorazaPlugin {
         // include traffic from any concurrently-live instances during
         // a hub reload window — fine for an operator-facing summary.
         //
-        // We don't free the WAF handle here. `init()` already frees
-        // the previous handle when it swaps in a new one (see the
-        // swap-and-replace block there), so the only handle still
-        // alive at Drop time is the one currently serving traffic.
-        // Freeing it here would race with the hub's atomic registry
-        // swap and cut traffic out from under the new plugin
-        // instance. The last handle is reaped by the Go runtime at
-        // process exit.
+        // Instance fields are dropped immediately after this method. Each WAF
+        // handle is then retired on the Go side; handles with cached response
+        // transactions remain leased until those transactions finish or
+        // expire.
         let allowed = unsafe { ffi::coraza_metrics_allowed() };
         let blocked = unsafe { ffi::coraza_metrics_blocked() };
         let rules_hit = unsafe { ffi::coraza_metrics_rules_hit() };
@@ -327,6 +297,7 @@ fn process_request(
     message: &SpoeMessage,
     config: &PluginConfig,
     waf_handle: u64,
+    selected_app: &str,
 ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
     let src_ip = message.get_string("src-ip").unwrap_or("");
     let src_port = message.get_int("src-port").unwrap_or(0) as i32;
@@ -336,31 +307,55 @@ fn process_request(
     let path = message.get_string("path").unwrap_or("");
     let query = message.get_string("query").unwrap_or("");
     let version = message.get_string("version").unwrap_or("");
-    let app_name = message.get_string("app");
+    let body_mode = message.get_string("body-mode");
+    let inspect_body = match body_mode {
+        // A missing completeness assertion can never make a potentially
+        // partial HAProxy buffer safe to inspect. Default to the header-only
+        // path; integrations that need phase-2 body variables must opt in to
+        // the explicit buffered contract below.
+        None => false,
+        Some("none") => false,
+        Some("buffered") => {
+            if !message.get_bool("body-complete").unwrap_or(false) {
+                return Err(
+                    "buffered request body is incomplete; refusing partial WAF inspection".into(),
+                );
+            }
+            true
+        }
+        Some(other) => return Err(format!("unsupported body-mode '{other}'").into()),
+    };
 
     // headers and body can arrive as either Binary or String
     let headers_buf = extract_bytes_as_headers(message.get("headers"));
-    let body_buf = extract_bytes(message.get("body"));
+    let body_buf = if inspect_body {
+        extract_bytes(message.get("body"))
+    } else {
+        Vec::new()
+    };
 
-    // Generate transaction ID
-    let tx_id = format!("{}-{}", message.stream_id, message.frame_id);
+    // Stream/frame IDs are scoped to one SPOP connection and collide across
+    // HAProxy processes. A process-wide sequence makes response correlation
+    // unique without putting request data into the identifier.
+    let sequence = TX_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let tx_id = format!("{sequence}-{}-{}", message.stream_id, message.frame_id);
 
     // Convert to C strings
-    let tx_id_c = to_cstring(&tx_id);
-    let src_ip_c = to_cstring(src_ip);
-    let dst_ip_c = to_cstring(dst_ip);
-    let method_c = to_cstring(method);
-    let path_c = to_cstring(path);
-    let query_c = to_cstring(query);
-    let version_c = to_cstring(version);
+    let tx_id_c = checked_cstring("transaction ID", &tx_id)?;
+    let src_ip_c = checked_cstring("source IP", src_ip)?;
+    let dst_ip_c = checked_cstring("destination IP", dst_ip)?;
+    let method_c = checked_cstring("method", method)?;
+    let path_c = checked_cstring("path", path)?;
+    let query_c = checked_cstring("query", query)?;
+    let version_c = checked_cstring("HTTP version", version)?;
+    let headers_len = checked_ffi_len("headers", headers_buf.len())?;
+    let body_len = checked_ffi_len("body", body_buf.len())?;
 
-    let app_name_c = app_name.map(to_cstring);
-    let app_name_ptr = app_name_c
-        .as_ref()
-        .map(|c| c.as_ptr())
-        .unwrap_or(std::ptr::null());
-
-    let cache_tx = if config.response_check { 1 } else { 0 };
+    let cache_ttl_ms = if config.response_check {
+        config.transaction_ttl_ms
+    } else {
+        0
+    };
 
     // Per-message detect-only override. When set on a request-side message,
     // the WAF still evaluates rules normally but coerces the verdict to
@@ -387,16 +382,22 @@ fn process_request(
             query_c.as_ptr(),
             version_c.as_ptr(),
             headers_buf.as_ptr() as *const _,
-            headers_buf.len() as c_int,
+            headers_len,
             body_buf.as_ptr() as *const _,
-            body_buf.len() as c_int,
-            cache_tx,
-            app_name_ptr,
+            body_len,
+            cache_ttl_ms,
+            config.max_cached_transactions,
             detect_only_flag,
+            i32::from(config.expose_matched_data),
+            config.matched_data_max_bytes,
         )
     };
     let elapsed = start.elapsed();
     let latency_us = elapsed.as_micros();
+
+    if result.action.is_null() {
+        return Err(format!("Coraza request evaluation failed: {}", last_ffi_error()).into());
+    }
 
     log::debug!(
         "coraza request: action={} rule_id={} latency_us={latency_us}",
@@ -404,9 +405,9 @@ fn process_request(
         result.rule_id,
     );
 
-    emit_eval_metrics("request", &result, app_name.unwrap_or(""), elapsed);
+    emit_eval_metrics("request", &result, selected_app, elapsed);
 
-    let variables = result_to_variables(&result, &tx_id, false);
+    let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data);
     result.free_data();
 
     Ok(ProcessingResult { variables })
@@ -450,10 +451,6 @@ fn process_response(
     message: &SpoeMessage,
     config: &PluginConfig,
 ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
-    if !config.response_check {
-        return Ok(ProcessingResult::empty());
-    }
-
     let tx_id = message.get_string("id").unwrap_or("");
     let status_code = message.get_int("status").unwrap_or(0) as i32;
     let version = message.get_string("version").unwrap_or("");
@@ -465,8 +462,10 @@ fn process_response(
     let headers_buf = extract_bytes_as_headers(message.get("headers"));
     let body_buf = extract_bytes(message.get("body"));
 
-    let tx_id_c = to_cstring(tx_id);
-    let version_c = to_cstring(version);
+    let tx_id_c = checked_cstring("transaction ID", tx_id)?;
+    let version_c = checked_cstring("HTTP version", version)?;
+    let headers_len = checked_ffi_len("headers", headers_buf.len())?;
+    let body_len = checked_ffi_len("body", body_buf.len())?;
     let detect_only_flag = if detect_only { 1 } else { 0 };
 
     let start = std::time::Instant::now();
@@ -476,13 +475,17 @@ fn process_response(
             status_code as c_int,
             version_c.as_ptr(),
             headers_buf.as_ptr() as *const _,
-            headers_buf.len() as c_int,
+            headers_len,
             body_buf.as_ptr() as *const _,
-            body_buf.len() as c_int,
+            body_len,
             detect_only_flag,
         )
     };
     let elapsed = start.elapsed();
+
+    if result.action.is_null() {
+        return Err(format!("Coraza response evaluation failed: {}", last_ffi_error()).into());
+    }
 
     // No `app` label on the response path — the upstream coraza FFI
     // looks up the app context by tx_id, not by an arg. Pass empty
@@ -490,14 +493,19 @@ fn process_response(
     // phase=response.
     emit_eval_metrics("response", &result, "", elapsed);
 
-    let variables = result_to_variables(&result, tx_id, true);
+    let variables = result_to_variables(&result, tx_id, true, false);
     result.free_data();
 
     Ok(ProcessingResult { variables })
 }
 
 /// Convert a CorazaResult into SPOE transaction variables.
-fn result_to_variables(result: &CorazaResult, tx_id: &str, is_response: bool) -> RVec<TxnVariable> {
+fn result_to_variables(
+    result: &CorazaResult,
+    tx_id: &str,
+    is_response: bool,
+    expose_matched_data: bool,
+) -> RVec<TxnVariable> {
     let prefix = if is_response { "resp_" } else { "" };
     let mut vars = RVec::with_capacity(if is_response { 3 } else { 7 });
 
@@ -535,7 +543,7 @@ fn result_to_variables(result: &CorazaResult, tx_id: &str, is_response: bool) ->
         ));
 
         let data = result.data_str();
-        if !data.is_empty() {
+        if expose_matched_data && !data.is_empty() {
             vars.push(TxnVariable::transaction(
                 "data",
                 SpoeValue::String(RString::from(data)),
@@ -576,9 +584,14 @@ fn create_waf(
     req_body_limit: i32,
     req_body_mem_limit: i32,
     resp_body_limit: i32,
+    config: &PluginConfig,
 ) -> Result<u64, String> {
-    let dir_c = to_cstring(directives);
-    let file_c = directives_file.map(to_cstring);
+    let dir_c = std::ffi::CString::new(directives)
+        .map_err(|_| "directives contain an interior NUL byte".to_string())?;
+    let file_c = directives_file
+        .map(std::ffi::CString::new)
+        .transpose()
+        .map_err(|_| "directives_file contains an interior NUL byte".to_string())?;
     let file_ptr = file_c
         .as_ref()
         .map(|c| c.as_ptr())
@@ -587,12 +600,16 @@ fn create_waf(
     let handle = unsafe {
         ffi::coraza_waf_new(
             dir_c.as_ptr(),
-            directives.len() as c_int,
+            checked_ffi_len("directives", dir_c.as_bytes().len())
+                .map_err(|error| error.to_string())?,
             file_ptr,
             std::ptr::null(),
             req_body_limit as c_int,
             req_body_mem_limit as c_int,
             resp_body_limit as c_int,
+            i32::from(config.rule_match_log),
+            config.matched_data_log.ffi_value(),
+            config.matched_data_max_bytes,
         )
     };
 
@@ -601,6 +618,21 @@ fn create_waf(
     } else {
         Ok(handle)
     }
+}
+
+fn checked_cstring(
+    field: &str,
+    value: &str,
+) -> Result<std::ffi::CString, Box<dyn std::error::Error + Send + Sync>> {
+    std::ffi::CString::new(value)
+        .map_err(|_| format!("{field} contains an interior NUL byte").into())
+}
+
+fn checked_ffi_len(
+    field: &str,
+    value: usize,
+) -> Result<c_int, Box<dyn std::error::Error + Send + Sync>> {
+    c_int::try_from(value).map_err(|_| format!("{field} exceeds i32::MAX bytes").into())
 }
 
 /// Fetch and clear the last Go-side error message.
@@ -846,12 +878,9 @@ mod validate_tests {
         );
     }
 
-    /// Regression for the null-byte FFI length mismatch. `to_cstring`
-    /// falls back to an empty CString on interior null bytes; if we
-    /// passed the original `&str` length to the Go side it would read
-    /// `len` bytes from a 1-byte buffer and corrupt memory. Using
-    /// `dir_c.as_bytes().len()` after conversion keeps lengths and
-    /// pointers coherent. The plugin must NOT crash for this input.
+    /// Null bytes cannot be represented on the C string boundary. Reject them
+    /// explicitly instead of validating an empty substitute and then failing
+    /// later during plugin initialization.
     #[test]
     fn directives_with_interior_null_byte_does_not_corrupt_memory() {
         let plugin = CorazaPlugin::__new();
@@ -860,12 +889,20 @@ mod validate_tests {
             "directives",
             ConfigValue::String(directives.into()),
         )]));
-        // We don't assert a specific shape — Coraza sees an empty
-        // directives string after the conversion and returns no
-        // diagnostics. The point of the test is that we don't read
-        // past the end of the converted buffer, which would manifest
-        // as a crash or sanitiser error under MIRI / asan.
-        let _ = diags;
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.as_str().contains("interior null byte")),
+            "null bytes must fail validation explicitly, got {diags:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_validator_json_fails_closed() {
+        let diags = parse_validation_json("not-json");
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].severity, DiagnosticSeverity::Error);
+        assert!(diags[0].message.as_str().contains("malformed diagnostics"));
     }
 
     /// Coraza-bundled directives like `@coraza.conf-recommended` and
@@ -918,43 +955,51 @@ mod validate_tests {
 
 #[cfg(test)]
 mod reload_tests {
-    //! Regression tests for the plugin's reload semantics. The hub
-    //! reloads by creating a NEW plugin instance, calling `init()` on
-    //! it, atomic-swapping the registry, then dropping the old
-    //! instance (see haproxy-spoa-hub `crates/hub/src/main.rs::reload_plugins`).
-    //! Linux's dlopen returns the same process-shared handle for the
-    //! same `.so` path, so the plugin's `static` data segment persists
-    //! across hub-level "loads" — i.e. across multiple `init()` calls
-    //! the plugin sees in one process. Any state that holds the live
-    //! WAF handle MUST therefore be replaceable on every init, not
-    //! one-shot.
-    //!
-    //! The bug this module exists to prevent: a `OnceLock<u64>` for
-    //! the WAF handle silently drops the second init's handle and
-    //! keeps serving requests with the first init's handle, which the
-    //! old plugin's Drop has already freed. Symptoms in production:
-    //! after HAPTIC pushes a hub config update with new SecRules,
-    //! coraza ignores the new rules — every request lands on the
-    //! WAF-engine-error path (action="deny", rule_id=0) instead of
-    //! either the new rules' decision or a fresh allow.
-    //!
-    //! Note on test isolation: this module's tests touch `WAF_HANDLE`
-    //! / `CONFIG`, which are crate-level statics. Running these tests
-    //! concurrently with anything else that calls `__init` would
-    //! corrupt that shared state. Today no other test does — keep it
-    //! that way, or wire up `serial_test` if a second `__init` caller
-    //! ever lands.
+    //! Regression tests for atomic, instance-owned reload generations. The hub
+    //! constructs and initializes a new instance before swapping registries;
+    //! the old instance must remain fully usable if that build fails, and old
+    //! application names must not leak into the next instance through shared
+    //! Go or Rust maps.
 
     use super::*;
     use haproxy_spoa_hub_plugin_api::{
         ConfigValue, PluginContext, RHashMap, RString, SpoeMessage, SpoeValue,
     };
 
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn make_context(directives: &str) -> PluginContext {
         let mut config = RHashMap::new();
         config.insert(
             RString::from("directives"),
             ConfigValue::String(directives.into()),
+        );
+        PluginContext {
+            name: RString::from("coraza"),
+            config,
+        }
+    }
+
+    fn make_context_with_app(
+        default_directives: &str,
+        app_name: &str,
+        app_directives: &str,
+    ) -> PluginContext {
+        let mut app = RHashMap::new();
+        app.insert(
+            RString::from("directives"),
+            ConfigValue::String(app_directives.into()),
+        );
+        let mut applications = RHashMap::new();
+        applications.insert(RString::from(app_name), ConfigValue::Table(app));
+        let mut config = RHashMap::new();
+        config.insert(
+            RString::from("directives"),
+            ConfigValue::String(default_directives.into()),
+        );
+        config.insert(
+            RString::from("applications"),
+            ConfigValue::Table(applications),
         );
         PluginContext {
             name: RString::from("coraza"),
@@ -983,7 +1028,11 @@ mod reload_tests {
         );
         args.insert(
             RString::from("headers"),
-            SpoeValue::Binary(b"Host\0example.com\0".to_vec().into()),
+            SpoeValue::Binary(
+                b"Host: example.com\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+                    .to_vec()
+                    .into(),
+            ),
         );
         SpoeMessage {
             name: RString::from("check-request"),
@@ -991,6 +1040,14 @@ mod reload_tests {
             stream_id: 1,
             frame_id: 1,
         }
+    }
+
+    fn make_app_request(path: &str, app: &str) -> SpoeMessage {
+        let mut message = make_check_request(path);
+        message
+            .args
+            .insert(RString::from("app"), SpoeValue::String(app.into()));
+        message
     }
 
     fn find_var<'a>(result: &'a ProcessingResult, name: &str) -> &'a SpoeValue {
@@ -1022,6 +1079,7 @@ mod reload_tests {
     /// processed this request" from "we hit the error path."
     #[test]
     fn process_after_reload_uses_new_init_waf() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         // Init #1 — first plugin instance with rule 9001 blocking /v1.
         let mut plugin1 = CorazaPlugin::__new();
         plugin1
@@ -1077,5 +1135,216 @@ mod reload_tests {
             ),
             other => panic!("rule_id variable should be Int32, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn failed_generation_build_leaves_serving_instance_unchanged_and_leak_free() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let mut serving = CorazaPlugin::__new();
+        serving
+            .__init(&make_context(
+                "SecRuleEngine On\n\
+                 SecRule REQUEST_URI \"@streq /live\" \"id:9101,phase:1,deny,status:403\"\n",
+            ))
+            .expect("serving generation should initialize");
+
+        let mut candidate = CorazaPlugin::__new();
+        let failed = candidate.__init(&make_context_with_app(
+            "SecRuleEngine On\n",
+            "broken",
+            "SecBogusDirective invalid\n",
+        ));
+        assert!(failed.is_err(), "candidate generation must fail atomically");
+        assert_eq!(
+            unsafe { ffi::coraza_waf_active_count() },
+            baseline + 1,
+            "the candidate's already-built default WAF must be reclaimed"
+        );
+
+        let result = serving
+            .__process(&make_check_request("/live"))
+            .expect("old instance must keep serving after candidate failure");
+        assert!(matches!(
+            find_var(&result, "rule_id"),
+            SpoeValue::Int32(9101)
+        ));
+
+        drop(candidate);
+        drop(serving);
+        assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+    }
+
+    #[test]
+    fn removed_application_name_is_not_visible_in_new_generation() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut old = CorazaPlugin::__new();
+        old.__init(&make_context_with_app(
+            "SecRuleEngine On\n",
+            "legacy",
+            "SecRuleEngine On\n\
+             SecRule REQUEST_URI \"@streq /legacy\" \"id:9201,phase:1,deny,status:403\"\n",
+        ))
+        .expect("old generation should initialize");
+
+        let mut new = CorazaPlugin::__new();
+        new.__init(&make_context("SecRuleEngine On\n"))
+            .expect("new generation should initialize");
+
+        let old_result = old
+            .__process(&make_app_request("/legacy", "legacy"))
+            .expect("old generation should retain its own app");
+        assert!(matches!(
+            find_var(&old_result, "rule_id"),
+            SpoeValue::Int32(9201)
+        ));
+
+        let error = new
+            .__process(&make_app_request("/legacy", "legacy"))
+            .expect_err("removed app must fail closed instead of using stale/global state");
+        assert!(
+            error
+                .to_string()
+                .contains("unknown Coraza application policy")
+        );
+    }
+
+    #[test]
+    fn repeated_instance_drop_reclaims_every_waf_handle() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        for generation in 0..3 {
+            let mut plugin = CorazaPlugin::__new();
+            plugin
+                .__init(&make_context_with_app(
+                    "SecRuleEngine On\n",
+                    "app",
+                    "SecRuleEngine On\n",
+                ))
+                .unwrap_or_else(|error| panic!("generation {generation} failed: {error}"));
+            assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline + 2);
+            drop(plugin);
+            assert_eq!(
+                unsafe { ffi::coraza_waf_active_count() },
+                baseline,
+                "generation {generation} leaked WAF handles"
+            );
+        }
+    }
+
+    #[test]
+    fn buffered_body_requires_explicit_completeness() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut plugin = CorazaPlugin::__new();
+        plugin
+            .__init(&make_context("SecRuleEngine On\nSecRequestBodyAccess On\n"))
+            .expect("plugin should initialize");
+        let mut request = make_check_request("/body");
+        request.args.insert(
+            RString::from("body-mode"),
+            SpoeValue::String("buffered".into()),
+        );
+        request.args.insert(
+            RString::from("body"),
+            SpoeValue::Binary(b"partial".to_vec().into()),
+        );
+
+        let error = plugin
+            .__process(&request)
+            .expect_err("partial body must fail closed");
+        assert!(error.to_string().contains("body is incomplete"));
+    }
+
+    #[test]
+    fn missing_body_mode_defaults_to_header_only() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut plugin = CorazaPlugin::__new();
+        plugin
+            .__init(&make_context(
+                "SecRuleEngine On\n\
+                 SecRequestBodyAccess On\n\
+                 SecRule ARGS:payload \"@streq malicious\" \"id:9300,phase:2,deny,status:403\"\n",
+            ))
+            .expect("plugin should initialize");
+        let mut request = make_check_request("/opaque");
+        request.args.insert(
+            RString::from("body"),
+            SpoeValue::Binary(b"payload=malicious".to_vec().into()),
+        );
+
+        let result = plugin
+            .__process(&request)
+            .expect("missing body mode should take the safe header-only path");
+        assert!(
+            matches!(find_var(&result, "action"), SpoeValue::String(action) if action.as_str() == "allow")
+        );
+    }
+
+    #[test]
+    fn detect_only_coerces_statusless_drop_to_allow() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut plugin = CorazaPlugin::__new();
+        plugin
+            .__init(&make_context(
+                "SecRuleEngine On\n\
+                 SecAction \"id:9302,phase:1,drop\"\n",
+            ))
+            .expect("plugin should initialize");
+        let mut request = make_check_request("/drop");
+        request
+            .args
+            .insert(RString::from("detect-only"), SpoeValue::Bool(true));
+
+        let result = plugin
+            .__process(&request)
+            .expect("detect-only request should evaluate");
+        assert!(
+            matches!(find_var(&result, "action"), SpoeValue::String(action) if action.as_str() == "allow")
+        );
+        assert!(matches!(find_var(&result, "status"), SpoeValue::Int32(0)));
+        assert!(matches!(
+            find_var(&result, "rule_id"),
+            SpoeValue::Int32(9302)
+        ));
+    }
+
+    #[test]
+    fn header_only_mode_never_inspects_supplied_opaque_body() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut plugin = CorazaPlugin::__new();
+        plugin
+            .__init(&make_context(
+                "SecRuleEngine On\n\
+                 SecRequestBodyAccess On\n\
+                 SecRule ARGS:payload \"@streq malicious\" \"id:9301,phase:2,deny,status:403\"\n",
+            ))
+            .expect("plugin should initialize");
+        let mut request = make_check_request("/opaque");
+        request
+            .args
+            .insert(RString::from("body-mode"), SpoeValue::String("none".into()));
+        request.args.insert(
+            RString::from("body"),
+            SpoeValue::Binary(b"payload=malicious".to_vec().into()),
+        );
+
+        let result = plugin
+            .__process(&request)
+            .expect("header-only request should evaluate");
+        assert!(
+            matches!(find_var(&result, "action"), SpoeValue::String(action) if action.as_str() == "allow")
+        );
+
+        request.args.insert(
+            RString::from("body-mode"),
+            SpoeValue::String("buffered".into()),
+        );
+        request
+            .args
+            .insert(RString::from("body-complete"), SpoeValue::Bool(true));
+        let inspected = plugin
+            .__process(&request)
+            .expect("complete buffered request should evaluate");
+        assert!(matches!(find_var(&inspected, "rule_id"), SpoeValue::Int32(id) if *id == 9301));
     }
 }

@@ -82,7 +82,7 @@ description: "Task list for Coraza WAF plugin implementation"
 
 ## Phase 4: User Story 2 - Outbound Response Inspection (Priority: P2)
 
-**Goal**: Evaluate HTTP responses against response-phase WAF rules with optional detect-only async mode.
+**Goal**: Evaluate HTTP responses against response-phase WAF rules with an optional detect-only verdict inside bounded hub execution.
 
 **Independent Test**: Enable response_check, send request triggering data leakage response → plugin flags it. Enable detect_only → response returns immediately, violation logged.
 
@@ -99,10 +99,10 @@ description: "Task list for Coraza WAF plugin implementation"
 - [x] T032 [US2] Implement TTL transaction cache with sync.RWMutex, background eviction goroutine, and automatic ProcessLogging()+Close() on eviction in go/cache.go
 - [x] T033 [US2] Implement coraza_process_response batched function that retrieves cached transaction, runs response-phase evaluations (AddResponseHeader loop, ProcessResponseHeaders, WriteResponseBody, ProcessResponseBody), returns coraza_result_t in go/transaction.go
 - [x] T034 [US2] Implement detect-only mode in coraza_process_response: deep-copy response data, spawn background goroutine for WAF evaluation, return allow immediately in go/transaction.go
-- [x] T035 [US2] Add coraza_set_cache_ttl FFI function and wire it to cache configuration in go/lib.go
-- [x] T036 [US2] Extend Rust FFI declarations with coraza_process_response and coraza_set_cache_ttl in src/ffi.rs
+- [x] T035 [US2] Pass cache TTL and capacity per request so concurrent reload generations cannot overwrite global settings
+- [x] T036 [US2] Extend Rust FFI declarations with response processing and bounded cache parameters
 - [x] T037 [US2] Extend plugin process() to handle check-response messages: extract id, status, headers, body, detect-only args, call coraza_process_response, return resp_action/resp_status/resp_rule_id variables in src/plugin.rs
-- [x] T038 [US2] Wire response_check, detect_only, transaction_ttl_ms config fields to init(): call coraza_set_cache_ttl, skip response message registration if response_check=false in src/plugin.rs
+- [x] T038 [US2] Wire response_check, detect_only, transaction_ttl_ms, and max_cached_transactions to request processing
 
 **Checkpoint**: Response inspection works. Detect-only mode returns immediately. Cache evicts expired transactions.
 

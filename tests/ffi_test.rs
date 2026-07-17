@@ -21,6 +21,9 @@ fn test_waf_create_with_embedded_crs() {
             131072, // request body limit
             131072, // request body mem limit
             131072, // response body limit
+            0,      // rule_match_log
+            0,      // matched_data_log_mode
+            128,    // matched_data_max_bytes
         )
     };
     assert!(handle > 0, "WAF handle should be non-zero");
@@ -45,6 +48,9 @@ fn test_waf_create_invalid_directives() {
             4096,
             4096,
             4096,
+            0,
+            0,
+            128,
         )
     };
     assert_eq!(handle, 0, "should return 0 for invalid directives");
@@ -69,6 +75,9 @@ fn test_process_benign_request() {
             131072,
             131072,
             131072,
+            0,
+            0,
+            128,
         )
     };
     assert!(handle > 0);
@@ -98,9 +107,11 @@ fn test_process_benign_request() {
             headers.len() as c_int,
             std::ptr::null(),
             0,
-            0,
-            std::ptr::null(),
-            0, // detect_only
+            0,    // cache_ttl_ms
+            1024, // max_cached_transactions
+            0,    // detect_only
+            0,    // expose_matched_data
+            128,
         )
     };
 
@@ -129,6 +140,9 @@ fn test_process_sql_injection() {
             131072,
             131072,
             131072,
+            0,
+            0,
+            128,
         )
     };
     assert!(handle > 0);
@@ -159,8 +173,10 @@ fn test_process_sql_injection() {
             std::ptr::null(),
             0,
             0,
-            std::ptr::null(),
+            1024,
             0, // detect_only
+            0,
+            128,
         )
     };
 
@@ -200,6 +216,9 @@ fn test_process_sql_injection_detect_only() {
             131072,
             131072,
             131072,
+            0,
+            0,
+            128,
         )
     };
     assert!(handle > 0);
@@ -230,8 +249,10 @@ fn test_process_sql_injection_detect_only() {
             std::ptr::null(),
             0,
             0,
-            std::ptr::null(),
+            1024,
             1, // detect_only=true: rules evaluate but verdict coerced to allow
+            0,
+            128,
         )
     };
 
@@ -276,6 +297,9 @@ fn test_process_benign_request_detect_only_is_noop() {
             131072,
             131072,
             131072,
+            0,
+            0,
+            128,
         )
     };
     assert!(handle > 0);
@@ -306,8 +330,10 @@ fn test_process_benign_request_detect_only_is_noop() {
             std::ptr::null(),
             0,
             0,
-            std::ptr::null(),
+            1024,
             1, // detect_only=true on a benign request
+            0,
+            128,
         )
     };
 

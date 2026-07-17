@@ -20,6 +20,9 @@ fn setup_waf() -> u64 {
             131072,
             131072,
             131072,
+            0,
+            0,
+            128,
         )
     }
 }
@@ -58,8 +61,10 @@ fn bench_benign_request(c: &mut Criterion) {
                     std::ptr::null(),
                     0,
                     0,
-                    std::ptr::null(),
+                    1024,
                     0, // detect_only
+                    0,
+                    128,
                 )
             };
             assert_eq!(result.action_str(), "allow");
@@ -103,8 +108,10 @@ fn bench_sql_injection(c: &mut Criterion) {
                     std::ptr::null(),
                     0,
                     0,
-                    std::ptr::null(),
+                    1024,
                     0, // detect_only
+                    0,
+                    128,
                 )
             };
             assert_eq!(result.action_str(), "deny");

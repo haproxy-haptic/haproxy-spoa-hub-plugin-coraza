@@ -103,8 +103,7 @@ frontend web
 For production deployments, set these environment variables before starting the hub:
 
 ```bash
-# Reduce GC pressure (set GOMEMLIMIT to ~85% of available memory)
-export GOGC=off
+# Keep GC enabled and leave headroom for Rust, CRS, and native allocations.
 export GOMEMLIMIT=900MiB
 
 # Or for containerized deployments

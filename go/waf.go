@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"os"
@@ -18,21 +19,65 @@ import (
 
 // wafInstance holds a compiled WAF and its metadata.
 type wafInstance struct {
-	waf        coraza.WAF
-	rulesCount int
+	waf                coraza.WAF
+	rulesCount         int
+	activeTransactions int
+	retiring           bool
 }
 
 var (
-	wafMu       sync.RWMutex
-	wafHandles  = make(map[uint64]*wafInstance)
-	wafNextID   atomic.Uint64
-	appWAFs     = make(map[string]uint64) // app name → waf handle
-	defaultWAF  uint64
-	appWAFsMu   sync.RWMutex
+	wafMu      sync.RWMutex
+	wafHandles = make(map[uint64]*wafInstance)
+	wafNextID  atomic.Uint64
 )
 
+const (
+	matchedDataNone = iota
+	matchedDataHash
+	matchedDataTruncate
+)
+
+func boundedLogValue(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	bytes := []byte(value)
+	truncated := len(bytes) > limit
+	if truncated {
+		bytes = bytes[:limit]
+	}
+	for i, b := range bytes {
+		if b < 0x20 || b == 0x7f || b >= 0x80 {
+			bytes[i] = '.'
+		}
+	}
+	result := string(bytes)
+	if truncated {
+		result += "..."
+	}
+	return result
+}
+
+func matchedDataForLog(data string, mode, limit int) string {
+	switch mode {
+	case matchedDataHash:
+		return fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(data)))
+	case matchedDataTruncate:
+		return boundedLogValue(data, limit)
+	default:
+		return ""
+	}
+}
+
 // createWAF builds a new Coraza WAF instance from directives and optional config.
-func createWAF(directives string, directivesFile string, rootFSPath string, reqBodyLimit, reqBodyMemLimit, respBodyLimit int) (uint64, int, error) {
+func createWAF(
+	directives string,
+	directivesFile string,
+	rootFSPath string,
+	reqBodyLimit, reqBodyMemLimit, respBodyLimit int,
+	ruleMatchLog bool,
+	matchedDataLogMode, matchedDataMaxBytes int,
+) (uint64, int, error) {
 	config := coraza.NewWAFConfig()
 
 	// Merge embedded CRS with OS filesystem (or custom path)
@@ -54,9 +99,11 @@ func createWAF(directives string, directivesFile string, rootFSPath string, reqB
 		config = config.WithDirectivesFromFile(directivesFile)
 	}
 
-	// Body access and limits
+	// Body limits are integration safety rails; body access itself is controlled
+	// by SecRequestBodyAccess/SecResponseBodyAccess in each compiled policy. This
+	// is what allows HAPTIC to use header-only profiles without Coraza buffering
+	// an opaque Git or package payload.
 	// Note: RequestBodyLimit must be >= RequestBodyInMemoryLimit (Coraza panics otherwise)
-	config = config.WithRequestBodyAccess()
 	if reqBodyLimit > 0 {
 		memLimit := reqBodyMemLimit
 		if memLimit <= 0 {
@@ -68,18 +115,24 @@ func createWAF(directives string, directivesFile string, rootFSPath string, reqB
 		config = config.WithRequestBodyLimit(reqBodyLimit)
 		config = config.WithRequestBodyInMemoryLimit(memLimit)
 	}
-	config = config.WithResponseBodyAccess()
 	if respBodyLimit > 0 {
 		config = config.WithResponseBodyLimit(respBodyLimit)
 	}
 
-	// Error callback for matched rules logging
+	// Matched-rule logging is deliberately opt-in. Logging every rule match on
+	// hostile traffic is a log-amplification vector, and MatchedRule.Data may
+	// contain credentials or arbitrary request bodies.
 	config = config.WithErrorCallback(func(mr types.MatchedRule) {
-		log.Warn().
+		if !ruleMatchLog {
+			return
+		}
+		event := log.Warn().
 			Int("rule_id", mr.Rule().ID()).
-			Str("msg", mr.Message()).
-			Str("data", mr.Data()).
-			Msg("WAF rule matched")
+			Str("msg", boundedLogValue(mr.Message(), 512))
+		if data := matchedDataForLog(mr.Data(), matchedDataLogMode, matchedDataMaxBytes); data != "" {
+			event = event.Str("data", data)
+		}
+		event.Msg("WAF rule matched")
 	})
 
 	waf, err := coraza.NewWAF(config)
@@ -109,6 +162,9 @@ func createWAF(directives string, directivesFile string, rootFSPath string, reqB
 func getWAF(handle uint64) (*wafInstance, error) {
 	wafMu.RLock()
 	inst, ok := wafHandles[handle]
+	if ok && inst.retiring {
+		ok = false
+	}
 	wafMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("WAF handle %d not found", handle)
@@ -116,34 +172,65 @@ func getWAF(handle uint64) (*wafInstance, error) {
 	return inst, nil
 }
 
-// getWAFForApp retrieves the WAF handle for a given app name.
-func getWAFForApp(appName string) uint64 {
-	if appName == "" {
-		return defaultWAF
+// retainWAF pins a handle while a request transaction waits for its response.
+func retainWAF(handle uint64) bool {
+	wafMu.Lock()
+	defer wafMu.Unlock()
+	inst, ok := wafHandles[handle]
+	if !ok || inst.retiring {
+		return false
 	}
-	appWAFsMu.RLock()
-	handle, ok := appWAFs[appName]
-	appWAFsMu.RUnlock()
-	if !ok {
-		return defaultWAF
-	}
-	return handle
+	inst.activeTransactions++
+	return true
 }
 
-// destroyWAF destroys a WAF instance and releases its resources.
-func destroyWAF(handle uint64) {
-	wafMu.Lock()
-	inst, ok := wafHandles[handle]
-	if ok {
-		delete(wafHandles, handle)
-	}
-	wafMu.Unlock()
-
-	if ok && inst.waf != nil {
+func closeWAF(inst *wafInstance) {
+	if inst != nil && inst.waf != nil {
 		if closer, ok := inst.waf.(experimental.WAFCloser); ok {
 			closer.Close()
 		}
 	}
+}
+
+// releaseWAF drops a cached-transaction lease and completes deferred
+// destruction once the last transaction from a retired generation closes.
+func releaseWAF(handle uint64) {
+	var closing *wafInstance
+	wafMu.Lock()
+	if inst, ok := wafHandles[handle]; ok {
+		if inst.activeTransactions > 0 {
+			inst.activeTransactions--
+		}
+		if inst.retiring && inst.activeTransactions == 0 {
+			delete(wafHandles, handle)
+			closing = inst
+		}
+	}
+	wafMu.Unlock()
+	closeWAF(closing)
+}
+
+// destroyWAF destroys a WAF instance and releases its resources.
+func destroyWAF(handle uint64) {
+	var closing *wafInstance
+	wafMu.Lock()
+	inst, ok := wafHandles[handle]
+	if ok {
+		if inst.activeTransactions == 0 {
+			delete(wafHandles, handle)
+			closing = inst
+		} else {
+			inst.retiring = true
+		}
+	}
+	wafMu.Unlock()
+	closeWAF(closing)
+}
+
+func activeWAFCount() int {
+	wafMu.RLock()
+	defer wafMu.RUnlock()
+	return len(wafHandles)
 }
 
 // destroyAllWAFs cleans up all WAF instances.

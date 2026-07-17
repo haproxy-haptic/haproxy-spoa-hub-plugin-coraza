@@ -8,7 +8,7 @@ This delta extends the `check-request` input argument set with one new optional 
 
 | Argument | Type | Source (HAProxy fetch) | Description |
 |----------|------|------------------------|-------------|
-| `detect-only` | bool | Literal or `var(txn.<n>)` from a per-route map | When `true`, the plugin evaluates rules normally but coerces the verdict to `action=allow` even when a rule fires; the matched `rule_id`, `anomaly_score`, `rules_hit`, and `data` return variables are populated as usual. When `false` or absent, the verdict is enforced. Falls back to the hub-global `detect_only` config when malformed or wrong-type. |
+| `detect-only` | bool | Literal or `var(txn.<n>)` from a per-route map | When `true`, the plugin evaluates rules normally but coerces the verdict to `action=allow` even when a rule fires; `rule_id`, `anomaly_score`, and `rules_hit` remain populated. Bounded `data` remains opt-in. When `false` or absent, the verdict is enforced. Falls back to the hub-global `detect_only` config when malformed or wrong-type. |
 
 The argument name `detect-only` is the same name and type used on the existing `check-response` message; operators may symmetrically wire it on both messages without conditional HAProxy config.
 
@@ -41,34 +41,14 @@ When `detect-only` is absent or has the wrong type, the plugin falls back to the
 
 ## FFI signature delta — `coraza_process_request`
 
-The C ABI gains one trailing `c_int` parameter, mirroring the response-side function:
-
-```diff
- pub fn coraza_process_request(
-     waf_handle: u64,
-     tx_id: *const c_char,
-     src_ip: *const c_char,
-     src_port: c_int,
-     dst_ip: *const c_char,
-     dst_port: c_int,
-     method: *const c_char,
-     path: *const c_char,
-     query: *const c_char,
-     http_version: *const c_char,
-     headers: *const c_char,
-     headers_len: c_int,
-     body: *const c_char,
-     body_len: c_int,
-     cache_tx: c_int,
-     app_name: *const c_char,
-+    detect_only: c_int,
- ) -> CorazaResult;
-```
+The private co-built C ABI carries `detect_only` after the per-request cache
+TTL and capacity. Later hardening added matched-data controls after it; the
+canonical current signature lives in the base FFI contract.
 
 The Go-side `coraza_process_request` declaration MUST gain the same parameter and honour it after the existing rule evaluation: if `detect_only != 0` and `interrupted == true`, the result's `action` is coerced to `allowAction` and the metric is reclassified from `metricsBlocked` to `metricsAllowed` before returning.
 
 ## Backward compatibility
 
-- The Rust-side caller (`src/plugin.rs::process_request`) constructs the FFI call with `detect_only` defaulting to `0` when the SPOE arg is absent — preserving the current behaviour for any operator not using the new argument.
+- The Rust-side caller (`src/plugin.rs::process_request`) resolves an absent or malformed argument through the global `config.detect_only` default — preserving current behavior for operators not using the override.
 - The Go-side function is decorated with `//export coraza_process_request`; adding a parameter to a Cgo-exported function is a breaking change to the C ABI. Because Rust and Go are built together in the same plugin, the FFI is private to this crate's build — no external consumers — and the parameter addition is fine within a MINOR Cargo version bump for this plugin.
 - Existing operator HAProxy configs that don't set `detect-only` on the request side see no behaviour change.

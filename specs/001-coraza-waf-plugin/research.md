@@ -52,10 +52,10 @@
 
 **Optimizations to apply**:
 
-1. **Go runtime tuning**: `GOGC=off` + `GOMEMLIMIT` (set to ~85-90% of available memory). Reduces GC frequency from ~350/min to ~30/min per Weaviate's benchmarks.
+1. **Go runtime tuning**: Keep GC enabled and set `GOMEMLIMIT` below the container memory limit, leaving headroom for Rust, CRS, and native allocations. Disabling GC is unsafe for a request-facing plugin because hostile traffic can force growth until OOM kill.
 
 2. **Coraza build tags**:
-   - `coraza.rule.rx_prefilter` — skip full regex when quick pre-filter determines no match possible
+   - `SecRxPreFilter On` — public runtime directive for regex pre-filtering; do not depend on Coraza's internal build tag across minor versions
    - `coraza.rule.multiphase_evaluation` — evaluate rules in earlier phases when variables are ready
    - `coraza.rule.no_regex_multiline` — disable multiline regex (aligns with CRS expectations)
 

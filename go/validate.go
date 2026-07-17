@@ -93,21 +93,21 @@ func (e *capturedEvent) Int(key string, i int) debuglog.Event {
 	}
 	return e
 }
-func (e *capturedEvent) Uint(_ string, _ uint) debuglog.Event              { return e }
-func (e *capturedEvent) Stringer(_ string, _ fmt.Stringer) debuglog.Event  { return e }
-func (e *capturedEvent) IsEnabled() bool                                   { return true }
+func (e *capturedEvent) Uint(_ string, _ uint) debuglog.Event             { return e }
+func (e *capturedEvent) Stringer(_ string, _ fmt.Stringer) debuglog.Event { return e }
+func (e *capturedEvent) IsEnabled() bool                                  { return true }
 
 // noopEvent absorbs Trace/Debug/Info chains without recording anything.
 type noopEvent struct{}
 
-func (noopEvent) Msg(_ string)                                        {}
-func (n noopEvent) Str(_, _ string) debuglog.Event                    { return n }
-func (n noopEvent) Err(_ error) debuglog.Event                        { return n }
-func (n noopEvent) Bool(_ string, _ bool) debuglog.Event              { return n }
-func (n noopEvent) Int(_ string, _ int) debuglog.Event                { return n }
-func (n noopEvent) Uint(_ string, _ uint) debuglog.Event              { return n }
-func (n noopEvent) Stringer(_ string, _ fmt.Stringer) debuglog.Event  { return n }
-func (n noopEvent) IsEnabled() bool                                   { return false }
+func (noopEvent) Msg(_ string)                                       {}
+func (n noopEvent) Str(_, _ string) debuglog.Event                   { return n }
+func (n noopEvent) Err(_ error) debuglog.Event                       { return n }
+func (n noopEvent) Bool(_ string, _ bool) debuglog.Event             { return n }
+func (n noopEvent) Int(_ string, _ int) debuglog.Event               { return n }
+func (n noopEvent) Uint(_ string, _ uint) debuglog.Event             { return n }
+func (n noopEvent) Stringer(_ string, _ fmt.Stringer) debuglog.Event { return n }
+func (n noopEvent) IsEnabled() bool                                  { return false }
 
 // coraza_validate_directives compiles a directives string via Coraza's
 // public API and returns captured diagnostics as a JSON-serialised

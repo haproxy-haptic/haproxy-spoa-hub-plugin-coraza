@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -10,7 +11,7 @@ Include @coraza.conf-recommended
 Include @crs-setup.conf.example
 Include @owasp_crs/*.conf`
 
-	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096)
+	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
 	if err != nil {
 		t.Fatalf("createWAF failed: %v", err)
 	}
@@ -29,7 +30,7 @@ func TestCreateWAF_InvalidDirectives(t *testing.T) {
 	directives := `SecRuleEngine On
 Include /nonexistent/path/rules.conf`
 
-	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096)
+	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
 	if err == nil {
 		destroyWAF(handle)
 		t.Fatal("expected error for invalid directives")
@@ -39,7 +40,7 @@ Include /nonexistent/path/rules.conf`
 
 func TestCreateWAF_MinimalDirectives(t *testing.T) {
 	directives := "SecRuleEngine On"
-	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096)
+	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
 	if err != nil {
 		t.Fatalf("createWAF failed: %v", err)
 	}
@@ -55,4 +56,40 @@ func TestCreateWAF_MinimalDirectives(t *testing.T) {
 func TestDestroyWAF_NonexistentHandle(t *testing.T) {
 	// Should not panic
 	destroyWAF(999999)
+}
+
+func TestRetiredWAFClosesAfterLastTransactionLease(t *testing.T) {
+	handle, _, err := createWAF("SecRuleEngine On", "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
+	if err != nil {
+		t.Fatalf("createWAF failed: %v", err)
+	}
+	if !retainWAF(handle) {
+		t.Fatal("expected to retain live WAF")
+	}
+
+	destroyWAF(handle)
+	if _, err := getWAF(handle); err == nil {
+		t.Fatal("retired WAF must reject new transactions")
+	}
+	if activeWAFCount() == 0 {
+		t.Fatal("leased WAF must remain allocated while transaction is cached")
+	}
+
+	releaseWAF(handle)
+	if _, err := getWAF(handle); err == nil {
+		t.Fatal("released retired WAF must be removed")
+	}
+}
+
+func TestMatchedDataLoggingIsBoundedAndSafeByDefault(t *testing.T) {
+	secret := "password=super-secret\nsecond-line"
+	if got := matchedDataForLog(secret, matchedDataNone, 128); got != "" {
+		t.Fatalf("default mode must omit matched data, got %q", got)
+	}
+	if got := matchedDataForLog(secret, matchedDataHash, 128); !strings.HasPrefix(got, "sha256:") || strings.Contains(got, "super-secret") {
+		t.Fatalf("hash mode must not expose payload, got %q", got)
+	}
+	if got := matchedDataForLog(secret, matchedDataTruncate, 12); got != "password=sup..." {
+		t.Fatalf("truncate mode must sanitize and bound output, got %q", got)
+	}
 }

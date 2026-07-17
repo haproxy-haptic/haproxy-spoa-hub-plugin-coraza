@@ -20,6 +20,8 @@
 | `body` | binary | `req.body` | Request body |
 | `app` | string | (optional) | Application name for multi-app routing |
 | `detect-only` | bool | (optional) | Per-message override: when `true`, the WAF evaluates rules normally but coerces the verdict to `action=allow`; matched `rule_id`, `anomaly_score`, `rules_hit`, and `data` are still populated. Falls back to the hub-global `detect_only` config when malformed or absent. See `specs/002-detect-only-request/`. |
+| `body-mode` | string | (optional) | `none` ignores body bytes; `buffered` inspects them and requires `body-complete=true`. Absent defaults safely to `none`. |
+| `body-complete` | bool | (required with buffered mode) | Integration assertion that HAProxy supplied the complete bounded body. Missing/false fails closed. |
 
 ### Output Variables (set by plugin)
 
@@ -28,12 +30,12 @@ All variables are scoped to `txn` and namespaced by the hub as `hub.<plugin_name
 | Variable | Type | Description |
 |----------|------|-------------|
 | `id` | string | Transaction ID (for response correlation) |
-| `action` | string | "allow" or "deny" |
-| `status` | int | HTTP status code (0=allow, 403/etc.=deny) |
+| `action` | string | `allow`, `deny`, `drop`, or `redirect` |
+| `status` | int | HTTP status code; a `drop` action is disruptive despite status 0 |
 | `rule_id` | int | ID of the rule that triggered deny (0=allow) |
 | `anomaly_score` | int | Accumulated anomaly score |
 | `rules_hit` | int | Number of rules that matched |
-| `data` | string | Auxiliary data (redirect URL if action=redirect) |
+| `data` | string | Bounded interruption data; omitted unless `expose_matched_data=true` |
 
 ## SPOE Message: `check-response`
 
@@ -48,7 +50,7 @@ All variables are scoped to `txn` and namespaced by the hub as `hub.<plugin_name
 | `status` | int | `status` | HTTP response status code |
 | `headers` | binary | `res.hdrs` | Raw response headers |
 | `body` | binary | `res.body` | Response body |
-| `detect-only` | bool | (optional) | If true, evaluate asynchronously |
+| `detect-only` | bool | (optional) | If true, coerce a completed WAF deny to allow; evaluation remains synchronous inside the hub admission permit |
 
 ### Output Variables (set by plugin)
 
@@ -83,7 +85,7 @@ spoe-agent coraza_agent
     timeout processing 15ms
 
 spoe-message check-request
-    args src-ip=src src-port=src_port dst-ip=dst dst-port=dst_port method=method path=path query=query version=req.ver headers=req.hdrs body=req.body
+    args src-ip=src src-port=src_port dst-ip=dst dst-port=dst_port method=method path=path query=query version=req.ver headers=req.hdrs body=req.body body-mode=var(txn.coraza_body_mode) body-complete=var(txn.coraza_body_complete) detect-only=var(txn.coraza_detect_only) app=var(txn.coraza_app)
     event on-frontend-http-request
 
 spoe-message check-response

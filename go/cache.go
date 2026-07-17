@@ -10,24 +10,16 @@ import (
 
 type cachedTx struct {
 	tx        types.Transaction
-	createdAt time.Time
+	wafHandle uint64
+	expiresAt time.Time
 }
 
 var (
 	txCache   = make(map[string]*cachedTx)
 	txCacheMu sync.RWMutex
-	cacheTTL  = 10 * time.Second
-	cacheWg   sync.WaitGroup // tracks background detect-only goroutines
 	cacheStop chan struct{}
 	cacheOnce sync.Once
 )
-
-// setCacheTTL updates the cache TTL.
-func setCacheTTL(ttlMs int) {
-	if ttlMs > 0 {
-		cacheTTL = time.Duration(ttlMs) * time.Millisecond
-	}
-}
 
 // startCacheEvictor starts the background eviction goroutine.
 func startCacheEvictor() {
@@ -52,61 +44,90 @@ func cacheEvictLoop() {
 }
 
 func evictExpired() {
-	now := time.Now()
-	var expired []string
+	txCacheMu.Lock()
+	expired := removeExpiredLocked(time.Now())
+	txCacheMu.Unlock()
 
-	txCacheMu.RLock()
+	closeCachedTransactions(expired)
+}
+
+func removeExpiredLocked(now time.Time) []*cachedTx {
+	var expired []*cachedTx
 	for id, entry := range txCache {
-		if now.Sub(entry.createdAt) > cacheTTL {
-			expired = append(expired, id)
-		}
-	}
-	txCacheMu.RUnlock()
-
-	for _, id := range expired {
-		txCacheMu.Lock()
-		entry, ok := txCache[id]
-		if ok {
+		if !now.Before(entry.expiresAt) {
+			expired = append(expired, entry)
 			delete(txCache, id)
 		}
-		txCacheMu.Unlock()
+	}
+	return expired
+}
 
-		if ok && entry.tx != nil {
-			log.Debug().Str("tx_id", id).Msg("Evicting expired transaction from cache")
+func closeCachedTransactions(entries []*cachedTx) {
+	for _, entry := range entries {
+		if entry.tx != nil {
+			log.Debug().Msg("Evicting expired transaction from cache")
 			entry.tx.ProcessLogging()
 			entry.tx.Close()
 		}
+		releaseWAF(entry.wafHandle)
 	}
 }
 
-// cacheTransaction stores a transaction for later response processing.
-func cacheTransaction(id string, tx types.Transaction) {
+// cacheTransaction stores a transaction for later response processing while
+// retaining its originating WAF generation. The global cache is hard-capped;
+// callers fail closed if capacity is exhausted.
+func cacheTransaction(id string, tx types.Transaction, wafHandle uint64, ttl time.Duration, maxEntries int) bool {
+	if ttl <= 0 || maxEntries <= 0 || !retainWAF(wafHandle) {
+		return false
+	}
 	startCacheEvictor()
 
+	var replaced *cachedTx
+	var expired []*cachedTx
 	txCacheMu.Lock()
+	if len(txCache) >= maxEntries {
+		// Under pressure, reclaim leases that are already expired before
+		// deciding the cache is full. Waiting for the one-second background
+		// sweep would create an avoidable fail-closed outage after a short burst.
+		expired = removeExpiredLocked(time.Now())
+	}
+	if _, exists := txCache[id]; !exists && len(txCache) >= maxEntries {
+		txCacheMu.Unlock()
+		closeCachedTransactions(expired)
+		releaseWAF(wafHandle)
+		return false
+	}
+	replaced = txCache[id]
 	txCache[id] = &cachedTx{
 		tx:        tx,
-		createdAt: time.Now(),
+		wafHandle: wafHandle,
+		expiresAt: time.Now().Add(ttl),
 	}
 	txCacheMu.Unlock()
+
+	closeCachedTransactions(expired)
+	if replaced != nil {
+		replaced.tx.ProcessLogging()
+		replaced.tx.Close()
+		releaseWAF(replaced.wafHandle)
+	}
+	return true
 }
 
-// getCachedTransaction retrieves a cached transaction by ID.
-func getCachedTransaction(id string) types.Transaction {
-	txCacheMu.RLock()
+// takeCachedTransaction atomically removes and returns one transaction. This
+// prevents duplicate response messages from processing the same Coraza
+// transaction concurrently.
+func takeCachedTransaction(id string) *cachedTx {
+	txCacheMu.Lock()
 	entry, ok := txCache[id]
-	txCacheMu.RUnlock()
+	if ok {
+		delete(txCache, id)
+	}
+	txCacheMu.Unlock()
 	if !ok {
 		return nil
 	}
-	return entry.tx
-}
-
-// removeCachedTransaction removes a transaction from the cache without closing it.
-func removeCachedTransaction(id string) {
-	txCacheMu.Lock()
-	delete(txCache, id)
-	txCacheMu.Unlock()
+	return entry
 }
 
 // drainCache closes all cached transactions and waits for background goroutines.
@@ -120,17 +141,14 @@ func drainCache() {
 		}
 	}
 
-	// Wait for detect-only background goroutines
-	cacheWg.Wait()
-
 	// Close all remaining cached transactions
 	txCacheMu.Lock()
+	entries := make([]*cachedTx, 0, len(txCache))
 	for id, entry := range txCache {
-		if entry.tx != nil {
-			entry.tx.ProcessLogging()
-			entry.tx.Close()
-		}
+		entries = append(entries, entry)
 		delete(txCache, id)
 	}
 	txCacheMu.Unlock()
+
+	closeCachedTransactions(entries)
 }
