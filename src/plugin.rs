@@ -453,8 +453,19 @@ fn emit_eval_metrics(
 /// `denials_total` only names the single interrupting rule; tuning a
 /// policy toward `deny` needs every rule that fired on traffic that was
 /// ultimately ALLOWED (in detect mode nothing interrupts at all). Rules
-/// arrive as compact JSON from the Go bridge; cardinality is bounded by
-/// the loaded ruleset, and only rules that actually matched emit.
+/// arrive as compact JSON from the Go bridge; only rules that actually
+/// matched emit.
+///
+/// Cardinality ceiling: series count is bounded by
+/// (#distinct rules that have ever matched) x (#apps) x (2 phases).
+/// Severity does NOT multiply the product — each rule ID carries one
+/// fixed severity, so it's a dependent label kept for query ergonomics.
+/// CRS ships ~800 rule IDs but only a small fraction ever match real
+/// traffic; a deployment where every rule matched for every app would
+/// still sit well under typical per-target series budgets. A decode
+/// failure of the FFI payload increments `rule_hits_decode_errors_total`
+/// so a contract break between the Go bridge and this parser is
+/// operator-visible rather than a silent metric flatline.
 fn emit_rule_hit_metrics(phase: &str, result: &ffi::CorazaResult, app: &str) {
     #[derive(serde::Deserialize)]
     struct RuleHit {
@@ -469,6 +480,7 @@ fn emit_rule_hit_metrics(phase: &str, result: &ffi::CorazaResult, app: &str) {
         Ok(hits) => hits,
         Err(err) => {
             log::debug!("unparseable matched_rules payload ({err}): {raw}");
+            METRICS.counter("rule_hits_decode_errors_total", &[("app", app)], 1);
             return;
         }
     };
