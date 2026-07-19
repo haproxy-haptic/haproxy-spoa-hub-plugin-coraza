@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -224,4 +225,65 @@ func TestDetectOnlyResponseProcessingRemainsSynchronous(t *testing.T) {
 	}
 	entry.tx.ProcessLogging()
 	entry.tx.Close()
+}
+
+func TestMatchedRulesJSON(t *testing.T) {
+	handle := setupTestWAF(t)
+	defer destroyWAF(handle)
+
+	inst, err := getWAF(handle)
+	if err != nil {
+		t.Fatalf("getWAF: %v", err)
+	}
+
+	tx := inst.waf.NewTransactionWithID("test-matched-json")
+	defer func() {
+		tx.ProcessLogging()
+		tx.Close()
+	}()
+
+	tx.ProcessConnection("192.168.1.1", 12345, "10.0.0.1", 80)
+	tx.ProcessURI("/search?id=1'+OR+1=1+--", "GET", "HTTP/1.1")
+	tx.AddRequestHeader("Host", "example.com")
+	tx.ProcessRequestHeaders()
+	tx.ProcessRequestBody()
+
+	raw := matchedRulesJSONString(tx.MatchedRules())
+	if raw == "" {
+		t.Fatal("expected matched_rules JSON for a SQLi transaction, got empty")
+	}
+
+	var hits []struct {
+		I int `json:"i"`
+		S int `json:"s"`
+	}
+	if err := json.Unmarshal([]byte(raw), &hits); err != nil {
+		t.Fatalf("matched_rules is not valid JSON: %v", err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("expected at least one rule hit")
+	}
+	sawSQLi := false
+	for _, h := range hits {
+		if h.I == 0 {
+			t.Errorf("administrative rule with id 0 must be skipped, got %+v", h)
+		}
+		if h.I >= 942000 && h.I < 943000 {
+			sawSQLi = true
+		}
+		// -1 = rule declares no severity (CRS reporting rules); the
+		// metrics consumer labels those "none".
+		if h.S < -1 || h.S > 7 {
+			t.Errorf("severity out of range: %+v", h)
+		}
+	}
+	if !sawSQLi {
+		t.Errorf("expected a 942xxx SQLi rule among hits: %+v", hits)
+	}
+}
+
+func TestMatchedRulesJSON_NoHitsIsEmpty(t *testing.T) {
+	if got := matchedRulesJSONString(nil); got != "" {
+		t.Errorf("expected empty string for no matched rules, got %q", got)
+	}
 }

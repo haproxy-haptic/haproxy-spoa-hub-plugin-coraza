@@ -5,6 +5,7 @@ package main
 */
 import "C"
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -37,6 +38,44 @@ type headerPair struct {
 	value string
 }
 
+// matchedRulesJSON serializes matched rules to the compact JSON array
+// ([{"i":<rule id>,"s":<severity 0-7>}, ...]) handed across the FFI for
+// per-rule metrics. Entries without a rule ID (administrative markers)
+// are skipped; nil is returned when nothing remains so the common
+// no-hit path allocates nothing.
+func matchedRulesJSON(matchedRules []types.MatchedRule) *C.char {
+	encoded := matchedRulesJSONString(matchedRules)
+	if encoded == "" {
+		return nil
+	}
+	return C.CString(encoded)
+}
+
+// matchedRulesJSONString is the pure (cgo-free) body of matchedRulesJSON,
+// split out because test files cannot import "C". Severity is passed
+// through raw: Coraza reports -1 for rules that declare none (e.g. CRS
+// reporting rules); the consumer maps out-of-range values to "none".
+func matchedRulesJSONString(matchedRules []types.MatchedRule) string {
+	type hit struct {
+		I int `json:"i"`
+		S int `json:"s"`
+	}
+	hits := make([]hit, 0, len(matchedRules))
+	for _, mr := range matchedRules {
+		if id := mr.Rule().ID(); id > 0 {
+			hits = append(hits, hit{I: id, S: int(mr.Rule().Severity())})
+		}
+	}
+	if len(hits) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(hits)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
 // buildResult creates a coraza_result_t from a transaction's state.
 // It checks both Coraza's native interruption mechanism and CRS anomaly
 // scoring rules (949110/949111 for inbound, 959100 for outbound).
@@ -45,6 +84,11 @@ func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool,
 
 	matchedRules := tx.MatchedRules()
 	result.rules_hit = C.int(len(matchedRules))
+	// Serialized before the early returns below so the caller gets the
+	// full per-rule hit list on every code path (interruption, anomaly
+	// block, and plain allow) — detect-mode tuning needs the rules that
+	// fired on ALLOWED traffic most of all.
+	result.matched_rules = matchedRulesJSON(matchedRules)
 
 	// Compute anomaly score by summing severities of disruptive-category rules.
 	// CRS assigns: CRITICAL=5, ERROR=4, WARNING=3, NOTICE=2.

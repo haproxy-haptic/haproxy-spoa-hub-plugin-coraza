@@ -9,6 +9,10 @@ pub struct CorazaResult {
     pub data: *const c_char,
     pub anomaly_score: c_int,
     pub rules_hit: c_int,
+    /// Compact JSON array of every matched rule ([{"i":id,"s":severity}]).
+    /// Null when no rules matched. Heap-allocated Go-side; freed via
+    /// `free_matched_rules`.
+    pub matched_rules: *const c_char,
 }
 
 unsafe extern "C" {
@@ -109,6 +113,21 @@ impl CorazaResult {
     /// freeing null and pre-allocated constants.
     pub fn free_data(&self) {
         unsafe { coraza_free_string(self.data as *mut c_char) };
+    }
+
+    /// Extract the matched-rules JSON, empty when no rules matched.
+    pub fn matched_rules_str(&self) -> &str {
+        if self.matched_rules.is_null() {
+            return "";
+        }
+        unsafe { CStr::from_ptr(self.matched_rules) }
+            .to_str()
+            .unwrap_or("")
+    }
+
+    /// Free the matched-rules string; same contract as `free_data`.
+    pub fn free_matched_rules(&self) {
+        unsafe { coraza_free_string(self.matched_rules as *mut c_char) };
     }
 }
 

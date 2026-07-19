@@ -9,3 +9,4 @@ go/libcoraza.h
 .env*
 .DS_Store
 Thumbs.db
+go/coraza-plugin

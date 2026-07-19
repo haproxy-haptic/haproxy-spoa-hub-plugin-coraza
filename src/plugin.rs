@@ -409,6 +409,7 @@ fn process_request(
 
     let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data);
     result.free_data();
+    result.free_matched_rules();
 
     Ok(ProcessingResult { variables })
 }
@@ -444,6 +445,74 @@ fn emit_eval_metrics(
             &[("phase", phase), ("rule_id", &rule_id_label), ("app", app)],
             1,
         );
+    }
+    emit_rule_hit_metrics(phase, result, app);
+}
+
+/// Per-matched-rule hit counters — the detect-mode tuning signal.
+/// `denials_total` only names the single interrupting rule; tuning a
+/// policy toward `deny` needs every rule that fired on traffic that was
+/// ultimately ALLOWED (in detect mode nothing interrupts at all). Rules
+/// arrive as compact JSON from the Go bridge; only rules that actually
+/// matched emit.
+///
+/// Cardinality ceiling: series count is bounded by
+/// (#distinct rules that have ever matched) x (#apps) x (2 phases).
+/// Severity does NOT multiply the product — each rule ID carries one
+/// fixed severity, so it's a dependent label kept for query ergonomics.
+/// CRS ships ~800 rule IDs but only a small fraction ever match real
+/// traffic; a deployment where every rule matched for every app would
+/// still sit well under typical per-target series budgets. A decode
+/// failure of the FFI payload increments `rule_hits_decode_errors_total`
+/// so a contract break between the Go bridge and this parser is
+/// operator-visible rather than a silent metric flatline.
+fn emit_rule_hit_metrics(phase: &str, result: &ffi::CorazaResult, app: &str) {
+    #[derive(serde::Deserialize)]
+    struct RuleHit {
+        i: i64,
+        s: i64,
+    }
+    let raw = result.matched_rules_str();
+    if raw.is_empty() {
+        return;
+    }
+    let hits: Vec<RuleHit> = match serde_json::from_str(raw) {
+        Ok(hits) => hits,
+        Err(err) => {
+            log::debug!("unparseable matched_rules payload ({err}): {raw}");
+            METRICS.counter("rule_hits_decode_errors_total", &[("app", app)], 1);
+            return;
+        }
+    };
+    for hit in hits {
+        let rule_id = hit.i.to_string();
+        METRICS.counter(
+            "rule_hits_total",
+            &[
+                ("phase", phase),
+                ("rule_id", &rule_id),
+                ("severity", severity_label(hit.s)),
+                ("app", app),
+            ],
+            1,
+        );
+    }
+}
+
+/// ModSecurity/Coraza severity numbers to their standard names. Coraza
+/// reports -1 for rules that declare no severity (CRS administrative /
+/// reporting rules) — those map to "none", as does anything out of range.
+fn severity_label(severity: i64) -> &'static str {
+    match severity {
+        0 => "emergency",
+        1 => "alert",
+        2 => "critical",
+        3 => "error",
+        4 => "warning",
+        5 => "notice",
+        6 => "info",
+        7 => "debug",
+        _ => "none",
     }
 }
 
@@ -495,6 +564,7 @@ fn process_response(
 
     let variables = result_to_variables(&result, tx_id, true, false);
     result.free_data();
+    result.free_matched_rules();
 
     Ok(ProcessingResult { variables })
 }
