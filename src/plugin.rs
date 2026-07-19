@@ -409,6 +409,7 @@ fn process_request(
 
     let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data);
     result.free_data();
+    result.free_matched_rules();
 
     Ok(ProcessingResult { variables })
 }
@@ -444,6 +445,62 @@ fn emit_eval_metrics(
             &[("phase", phase), ("rule_id", &rule_id_label), ("app", app)],
             1,
         );
+    }
+    emit_rule_hit_metrics(phase, result, app);
+}
+
+/// Per-matched-rule hit counters — the detect-mode tuning signal.
+/// `denials_total` only names the single interrupting rule; tuning a
+/// policy toward `deny` needs every rule that fired on traffic that was
+/// ultimately ALLOWED (in detect mode nothing interrupts at all). Rules
+/// arrive as compact JSON from the Go bridge; cardinality is bounded by
+/// the loaded ruleset, and only rules that actually matched emit.
+fn emit_rule_hit_metrics(phase: &str, result: &ffi::CorazaResult, app: &str) {
+    #[derive(serde::Deserialize)]
+    struct RuleHit {
+        i: i64,
+        s: i64,
+    }
+    let raw = result.matched_rules_str();
+    if raw.is_empty() {
+        return;
+    }
+    let hits: Vec<RuleHit> = match serde_json::from_str(raw) {
+        Ok(hits) => hits,
+        Err(err) => {
+            log::debug!("unparseable matched_rules payload ({err}): {raw}");
+            return;
+        }
+    };
+    for hit in hits {
+        let rule_id = hit.i.to_string();
+        METRICS.counter(
+            "rule_hits_total",
+            &[
+                ("phase", phase),
+                ("rule_id", &rule_id),
+                ("severity", severity_label(hit.s)),
+                ("app", app),
+            ],
+            1,
+        );
+    }
+}
+
+/// ModSecurity/Coraza severity numbers to their standard names. Coraza
+/// reports -1 for rules that declare no severity (CRS administrative /
+/// reporting rules) — those map to "none", as does anything out of range.
+fn severity_label(severity: i64) -> &'static str {
+    match severity {
+        0 => "emergency",
+        1 => "alert",
+        2 => "critical",
+        3 => "error",
+        4 => "warning",
+        5 => "notice",
+        6 => "info",
+        7 => "debug",
+        _ => "none",
     }
 }
 
@@ -495,6 +552,7 @@ fn process_response(
 
     let variables = result_to_variables(&result, tx_id, true, false);
     result.free_data();
+    result.free_matched_rules();
 
     Ok(ProcessingResult { variables })
 }

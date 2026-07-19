@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.0] - 2026-07-19
+
+### Added
+
+- Per-matched-rule metrics: `rule_hits_total{phase, rule_id, severity, app}` counts every rule that fired on each evaluation — including rules on traffic that was ultimately allowed, which is the signal detect-mode tuning needs (`denials_total` only ever names the single interrupting rule). Severity is labeled with the standard ModSecurity names; rules that declare no severity (CRS administrative/reporting rules, reported as -1 by Coraza) are labeled `none`. The matched-rule list crosses the FFI as a compact JSON array in the new `coraza_result_t.matched_rules` field (heap-allocated, freed by the plugin alongside `data`).
+
 ## [Unreleased]
 
 ## [0.6.0] - 2026-07-18
