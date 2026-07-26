@@ -13,6 +13,11 @@ pub struct CorazaResult {
     /// Null when no rules matched. Heap-allocated Go-side; freed via
     /// `free_matched_rules`.
     pub matched_rules: *const c_char,
+    /// Name of the request field a rule matched on (`VARIABLE` or
+    /// `VARIABLE:KEY`). The NAME only, never the value — safe to log where
+    /// `data` is not. Null when nothing matched. Heap-allocated Go-side;
+    /// freed via `free_matched_var`.
+    pub matched_var: *const c_char,
 }
 
 unsafe extern "C" {
@@ -128,6 +133,21 @@ impl CorazaResult {
     /// Free the matched-rules string; same contract as `free_data`.
     pub fn free_matched_rules(&self) {
         unsafe { coraza_free_string(self.matched_rules as *mut c_char) };
+    }
+
+    /// Extract the matched-variable name, empty when nothing matched.
+    pub fn matched_var_str(&self) -> &str {
+        if self.matched_var.is_null() {
+            return "";
+        }
+        unsafe { CStr::from_ptr(self.matched_var) }
+            .to_str()
+            .unwrap_or("")
+    }
+
+    /// Free the matched-variable string; same contract as `free_data`.
+    pub fn free_matched_var(&self) {
+        unsafe { coraza_free_string(self.matched_var as *mut c_char) };
     }
 }
 

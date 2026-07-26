@@ -1,12 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- New `matched_var` SPOE variable naming the request fields rules matched on, as a comma-separated list of `VARIABLE` or `VARIABLE:KEY` names — for example `REQUEST_FILENAME,ARGS_GET:id,REQUEST_LINE`. It answers "which field tripped this rule", which is what scoping a rule exclusion needs, and it carries **names only**: unlike `data` it never contains the matched value, so it needs no `expose_matched_data` gate and is safe in an access-log field.
+
+  A list rather than a single name because there is no single right answer: a CRS block is usually anomaly-scored, so rules of several severities matched on different variables and the interrupting rule (949110) names none of them. The reported rule's own targets lead, then the rest most-severe-first; entries are deduplicated and capped at 5.
+
+  Rules that declare no severity are ranked LAST, not first: Coraza reports unset severity as `-1`, which is numerically below every real severity including EMERGENCY, so ordering on the raw value would put CRS's administrative and reporting rules ahead of the actual attack rule and let them consume the entry cap.
+
+  Only request-derived variables are reported, via an allowlist (`ARGS*`, `REQUEST_*`, `QUERY_STRING`, `PATH_INFO`, `FILES*`, `MULTIPART*`, `XML`, `JSON`). Without it the field reads `UNKNOWN` or `TX:inbound_anomaly_score_threshold`, because CRS's administrative and scoring rules match before the attack rule does — the allowlist also makes the field meaningful by construction, since everything it can name is a request input.
+
 ## [0.7.0] - 2026-07-19
 
 ### Added
 
 - Per-matched-rule metrics: `rule_hits_total{phase, rule_id, severity, app}` counts every rule that fired on each evaluation — including rules on traffic that was ultimately allowed, which is the signal detect-mode tuning needs (`denials_total` only ever names the single interrupting rule). Severity is labeled with the standard ModSecurity names; rules that declare no severity (CRS administrative/reporting rules, reported as -1 by Coraza) are labeled `none`. The matched-rule list crosses the FFI as a compact JSON array in the new `coraza_result_t.matched_rules` field (heap-allocated, freed by the plugin alongside `data`). Series cardinality is bounded by (#distinct matched rules) x (#apps) x (2 phases) — severity is a dependent label of rule_id and does not multiply the product. A payload the plugin cannot decode increments `rule_hits_decode_errors_total{app}` so an FFI contract break is visible above debug logs.
-
-## [Unreleased]
 
 ## [0.6.0] - 2026-07-18
 
