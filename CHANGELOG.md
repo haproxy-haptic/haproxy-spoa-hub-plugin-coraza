@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-26
+
 ### Added
 
 - New `matched_var` SPOE variable naming the request fields rules matched on, as a comma-separated list of `VARIABLE` or `VARIABLE:KEY` names — for example `REQUEST_FILENAME,ARGS_GET:id,REQUEST_LINE`. It answers "which field tripped this rule", which is what scoping a rule exclusion needs, and it carries **names only**: unlike `data` it never contains the matched value, so it needs no `expose_matched_data` gate and is safe in an access-log field.
