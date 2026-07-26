@@ -7,6 +7,8 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 	"unsafe"
@@ -79,6 +81,129 @@ func matchedRulesJSONString(matchedRules []types.MatchedRule) string {
 // buildResult creates a coraza_result_t from a transaction's state.
 // It checks both Coraza's native interruption mechanism and CRS anomaly
 // scoring rules (949110/949111 for inbound, 959100 for outbound).
+// requestVariablePrefixes are the Coraza variable names that denote request
+// INPUTS — the only ones whose name helps an operator scope a rule exclusion.
+// Deliberately an allowlist: engine-internal collections (TX, MATCHED_VAR, RULE,
+// SESSION), connection metadata (REMOTE_ADDR, GEO), and anything Coraza cannot
+// name ("UNKNOWN") are all excluded by not appearing here.
+var requestVariablePrefixes = []string{
+	"ARGS",            // ARGS, ARGS_GET, ARGS_POST, *_NAMES
+	"REQUEST_HEADERS", // and REQUEST_HEADERS_NAMES
+	"REQUEST_COOKIES", // and REQUEST_COOKIES_NAMES
+	"REQUEST_URI",     // and REQUEST_URI_RAW
+	"REQUEST_BODY",
+	"REQUEST_LINE",
+	"REQUEST_FILENAME",
+	"REQUEST_METHOD",
+	"REQUEST_PROTOCOL",
+	"QUERY_STRING",
+	"PATH_INFO",
+	"FILES",     // FILES, FILES_NAMES, FILES_SIZES
+	"MULTIPART", // MULTIPART_* part metadata
+	"XML",
+	"JSON",
+}
+
+// isRequestVariable reports whether a Coraza variable name denotes a request
+// input, i.e. something whose NAME is useful in an access-log field and in a
+// rule exclusion.
+func isRequestVariable(name string) bool {
+	for _, p := range requestVariablePrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// severityRank orders matched rules by urgency for matchedVarName. CRS
+// severities count DOWN in urgency (0=EMERGENCY … 5=NOTICE), so the raw value
+// sorts correctly — EXCEPT that Coraza reports types.RuleSeverityUnset as -1,
+// which is lower than every real severity including EMERGENCY. Comparing the raw
+// value would therefore rank a rule that declares NO severity as the most urgent
+// of all, putting CRS's administrative and reporting rules ahead of the actual
+// attack rule and letting them consume the entry cap. Unset ranks last instead.
+func severityRank(mr types.MatchedRule) int {
+	s := int(mr.Rule().Severity())
+	if s < 0 {
+		return math.MaxInt
+	}
+	return s
+}
+
+// maxMatchedVars bounds the reported target list. Five is plenty to scope an
+// exclusion and keeps the access-log field short; the cap exists because a
+// hostile request can match many rules.
+const maxMatchedVars = 5
+
+// matchedVarName returns the request fields rules matched on, as a comma-
+// separated list of VARIABLE or VARIABLE:KEY names — for example
+// "ARGS:id,REQUEST_FILENAME". It returns NAMES only and never MatchData.Value():
+// naming the fields that tripped a rule is what false-positive triage needs to
+// scope an exclusion, and unlike the value it carries no request content, so it
+// is safe in an access-log field where `data` is not.
+//
+// A list rather than a single name, because there is no single right answer: a
+// CRS block is usually anomaly-scored, so several rules of different severities
+// matched on different variables and the interrupting rule (949110) names none
+// of them. Ordering puts the rule reported in preferRuleID first, then the
+// remaining rules most-severe-first, so the most likely culprit leads. Entries
+// are deduplicated and capped at maxMatchedVars.
+func matchedVarName(matchedRules []types.MatchedRule, preferRuleID int) string {
+	targets := func(mr types.MatchedRule) []string {
+		var out []string
+		for _, md := range mr.MatchedDatas() {
+			v := md.Variable().Name()
+			if !isRequestVariable(v) {
+				continue
+			}
+			if k := md.Key(); k != "" {
+				v += ":" + k
+			}
+			out = append(out, v)
+		}
+		return out
+	}
+
+	// Most-severe-first, stable within a severity. CRS severities count DOWN in
+	// urgency (2=CRITICAL … 5=NOTICE), so ascending value is descending urgency.
+	ordered := make([]types.MatchedRule, 0, len(matchedRules))
+	if preferRuleID != 0 {
+		for _, mr := range matchedRules {
+			if mr.Rule().ID() == preferRuleID {
+				ordered = append(ordered, mr)
+			}
+		}
+	}
+	rest := make([]types.MatchedRule, 0, len(matchedRules))
+	for _, mr := range matchedRules {
+		if preferRuleID != 0 && mr.Rule().ID() == preferRuleID {
+			continue
+		}
+		rest = append(rest, mr)
+	}
+	sort.SliceStable(rest, func(i, j int) bool {
+		return severityRank(rest[i]) < severityRank(rest[j])
+	})
+	ordered = append(ordered, rest...)
+
+	var names []string
+	seen := map[string]bool{}
+	for _, mr := range ordered {
+		for _, t := range targets(mr) {
+			if seen[t] {
+				continue
+			}
+			seen[t] = true
+			names = append(names, t)
+			if len(names) == maxMatchedVars {
+				return strings.Join(names, ",")
+			}
+		}
+	}
+	return strings.Join(names, ",")
+}
+
 func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool, matchedDataMaxBytes int) C.coraza_result_t {
 	result := allowResult()
 
@@ -118,6 +243,9 @@ func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool,
 			if exposeMatchedData && it.Data != "" {
 				result.data = C.CString(boundedLogValue(it.Data, matchedDataMaxBytes))
 			}
+			if n := matchedVarName(matchedRules, it.RuleID); n != "" {
+				result.matched_var = C.CString(n)
+			}
 			return result
 		}
 	}
@@ -133,6 +261,9 @@ func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool,
 			result.rule_id = C.int(ruleID)
 			result.action = actionDeny
 			result.status = 403
+			if n := matchedVarName(matchedRules, ruleID); n != "" {
+				result.matched_var = C.CString(n)
+			}
 			return result
 		}
 	}

@@ -410,6 +410,7 @@ fn process_request(
     let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data);
     result.free_data();
     result.free_matched_rules();
+    result.free_matched_var();
 
     Ok(ProcessingResult { variables })
 }
@@ -565,6 +566,7 @@ fn process_response(
     let variables = result_to_variables(&result, tx_id, true, false);
     result.free_data();
     result.free_matched_rules();
+    result.free_matched_var();
 
     Ok(ProcessingResult { variables })
 }
@@ -577,7 +579,7 @@ fn result_to_variables(
     expose_matched_data: bool,
 ) -> RVec<TxnVariable> {
     let prefix = if is_response { "resp_" } else { "" };
-    let mut vars = RVec::with_capacity(if is_response { 3 } else { 7 });
+    let mut vars = RVec::with_capacity(if is_response { 3 } else { 8 });
 
     if !is_response {
         vars.push(TxnVariable::transaction(
@@ -611,6 +613,17 @@ fn result_to_variables(
             "rules_hit",
             SpoeValue::Int32(result.rules_hit),
         ));
+
+        // The NAME of the field a rule matched on (e.g. ARGS:q), never its
+        // value — so unlike `data` below this needs no expose_matched_data gate.
+        // It carries no request content, which is what makes it loggable.
+        let matched_var = result.matched_var_str();
+        if !matched_var.is_empty() {
+            vars.push(TxnVariable::transaction(
+                "matched_var",
+                SpoeValue::String(RString::from(matched_var)),
+            ));
+        }
 
         let data = result.data_str();
         if expose_matched_data && !data.is_empty() {
