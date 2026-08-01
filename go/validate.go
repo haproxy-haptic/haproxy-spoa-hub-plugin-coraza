@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"unsafe"
 
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
@@ -117,7 +118,11 @@ func (n noopEvent) IsEnabled() bool                                  { return fa
 // caller via `coraza_free_string`.
 //
 //export coraza_validate_directives
-func coraza_validate_directives(directives *C.char, directivesLen C.int) *C.char {
+func coraza_validate_directives(
+	directives *C.char,
+	directivesLen C.int,
+	stagedFilesJSON *C.char,
+) *C.char {
 	defer recoverPanic("coraza_validate_directives")
 
 	if directives == nil || directivesLen <= 0 {
@@ -127,31 +132,63 @@ func coraza_validate_directives(directives *C.char, directivesLen C.int) *C.char
 		return C.CString("[]")
 	}
 
-	goDirectives := C.GoStringN(directives, directivesLen)
+	return marshalDiagnostics(validateDirectives(
+		C.GoStringN(directives, directivesLen),
+		goStagedFilesJSON(stagedFilesJSON),
+	))
+}
+
+// validateDirectives is the whole of the validation logic, kept free of cgo
+// types so it is reachable from tests — the exported symbol above is only the
+// FFI shell.
+func validateDirectives(directives, stagedFilesJSON string) []capturedDiagnostic {
+	return promoteEmptyGlobs(validateDirectivesRaw(directives, stagedFilesJSON))
+}
+
+// validateDirectivesRaw compiles the directives and returns Coraza's
+// diagnostics as reported, before any severity promotion. Split out so a test
+// can assert the wording the promotion keys on.
+func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnostic {
 	captured := make([]capturedDiagnostic, 0)
 	logger := &capturedLogger{diagnostics: &captured}
+
+	staged, stagedErr := parseStagedFiles(stagedFilesJSON)
+	if stagedErr != nil {
+		return append(captured, capturedDiagnostic{
+			Severity: "error",
+			Line:     0,
+			Message:  stagedErr.Error(),
+		})
+	}
 
 	// Mirror the production `createWAF` rootFS setup so directives that
 	// reference the embedded CRS (`@coraza.conf-recommended`,
 	// `@owasp_crs/*.conf`) resolve identically here. Without this,
 	// validating a config that production accepts would synthesize
-	// false-positive "no such file or directory" errors. The OS FS
-	// layer lets operators include their own files at known absolute
-	// paths if they ever add a custom rule include — same shape as
-	// production, no surprises.
-	rootFS := mergefs.Merge(coreruleset.FS, osfs.OSFS)
+	// false-positive "no such file or directory" errors.
+	//
+	// Staged files sit between the embedded CRS and the OS layer, so they
+	// shadow the real filesystem: the validator runs in the controller pod,
+	// where a path like /etc/haproxy/general/crs/*.conf either does not exist
+	// or belongs to something else entirely. What the request carries is the
+	// content about to be deployed, and that is what must be compiled. The OS
+	// layer stays last so a genuinely on-disk include still resolves.
+	filesystems := []fs.FS{coreruleset.FS}
+	if len(staged) > 0 {
+		filesystems = append(filesystems, newStagedFS(staged))
+	}
+	filesystems = append(filesystems, osfs.OSFS)
+
 	cfg := coraza.NewWAFConfig().
 		WithDebugLogger(logger).
-		WithRootFS(rootFS).
-		WithDirectives(goDirectives)
+		WithRootFS(mergefs.Merge(filesystems...)).
+		WithDirectives(directives)
 
-	_, err := coraza.NewWAF(cfg)
-	if err != nil {
+	if _, err := coraza.NewWAF(cfg); err != nil {
 		// Build a final error diagnostic carrying the wrapped error
 		// message. Use the line of the most recent captured entry as
-		// best-effort positioning — the parser logs the
-		// per-directive context just before NewWAF returns the
-		// wrapped error.
+		// best-effort positioning — the parser logs the per-directive
+		// context just before NewWAF returns the wrapped error.
 		line := 0
 		if len(captured) > 0 {
 			line = captured[len(captured)-1].Line
@@ -163,6 +200,54 @@ func coraza_validate_directives(directives *C.char, directivesLen C.int) *C.char
 		})
 	}
 
+	return captured
+}
+
+// corazaEmptyGlobMessage is what Coraza logs when an `Include` pattern matches
+// no files (internal/seclang/parser.go). It is matched by text because Coraza
+// attaches no structured field naming the pattern — only a line number.
+const corazaEmptyGlobMessage = "empty glob result"
+
+// promoteEmptyGlobs turns "this Include matched nothing" from a warning into an
+// error.
+//
+// Coraza only warns, which means a ruleset that never reached the pod compiles
+// to whatever the OTHER includes contributed and validates clean. That is
+// indistinguishable from the ruleset having arrived, and it is silent: the WAF
+// runs with rules missing and nothing says so. A rule-count check does not
+// catch it either — `@coraza.conf-recommended` alone contributes rules, so the
+// count is non-zero with the entire ruleset absent.
+//
+// Deliberately validate-only. Admission refuses a config whose files are not
+// all there; the runtime path keeps its warning, so an already-running fleet is
+// not taken down by an upstream that went away after it was admitted.
+//
+// The message coupling is pinned by TestPromoteEmptyGlobs_MatchesCorazaWording,
+// which fails if a Coraza upgrade changes the text — the alternative to
+// coupling is fail-open, which is not a trade worth making.
+func promoteEmptyGlobs(captured []capturedDiagnostic) []capturedDiagnostic {
+	for i := range captured {
+		if captured[i].Severity == "warning" && captured[i].Message == corazaEmptyGlobMessage {
+			captured[i].Severity = "error"
+			captured[i].Message = corazaEmptyGlobMessage +
+				": an Include matched no files, so those rules are missing from the compiled WAF"
+		}
+	}
+	return captured
+}
+
+// goStagedFilesJSON reads the optional staged-files payload. A nil pointer is
+// the ordinary case: a config that includes nothing off disk.
+func goStagedFilesJSON(payload *C.char) string {
+	if payload == nil {
+		return ""
+	}
+	return C.GoString(payload)
+}
+
+// marshalDiagnostics renders the captured diagnostics as the JSON array the
+// Rust side parses.
+func marshalDiagnostics(captured []capturedDiagnostic) *C.char {
 	body, marshalErr := json.Marshal(captured)
 	if marshalErr != nil {
 		// Should be unreachable — capturedDiagnostic is plain JSON.

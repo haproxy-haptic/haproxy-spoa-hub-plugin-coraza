@@ -78,9 +78,16 @@ unsafe extern "C" {
     // SecLang parser line numbers from the WAF's debug logger. Returns
     // a JSON-encoded `[]{severity,line,message}` slice as a heap-
     // allocated C string the caller MUST free via `coraza_free_string`.
+    // `staged_files_json` optionally carries a JSON object of path ->
+    // content: the files the validator was handed over the wire, layered
+    // over the embedded CRS so an `Include` of a path on the HAProxy pod's
+    // disk resolves against the content about to be deployed rather than
+    // against the controller pod's own filesystem. NULL when the request
+    // carried none.
     pub fn coraza_validate_directives(
         directives: *const c_char,
         directives_len: c_int,
+        staged_files_json: *const c_char,
     ) -> *mut c_char;
 
     // Utilities

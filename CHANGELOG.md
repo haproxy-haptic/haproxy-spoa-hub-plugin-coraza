@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- `validate()` now compiles directives against the **files the validator was handed**, not just the embedded CRS and the local filesystem. The hub's validator passes the request's data files under the `__staged_files` config key (haproxy-spoa-hub !220), and they are layered between the embedded CRS and the OS filesystem — so an `Include /etc/haproxy/general/crs/*.conf` resolves against the ruleset about to be deployed. The validator runs in the controller pod, where that path does not exist, so before this such a config could only be validated by not checking the ruleset at all.
+
+  Staged files live entirely in memory (`testing/fstest.MapFS` behind a path-normalising wrapper). Nothing is written to disk, which keeps temp-dir cleanup, cross-request collisions and staging-root traversal out of a path that runs on every admission. Absolute paths work because the wrapper normalises to the unrooted form `io/fs` requires, while `Glob` answers in the caller's own spelling so Coraza's diagnostics name the paths the operator wrote.
+
+### Security
+
+- An `Include` that matches no files is now an **error** during `validate()`, where Coraza only warns. A ruleset that never reached the pod otherwise compiles to whatever the other includes contributed and validates clean — indistinguishable from one that arrived, with the WAF running silently short of rules. A rule-count check does not catch this: `@coraza.conf-recommended` contributes rules on its own, so the count stays non-zero with the entire ruleset absent.
+
+  Validate-only, deliberately. Admission refuses a config whose files are not all present; the runtime path keeps Coraza's warning, so a fleet already running is not taken down by an upstream that disappeared after it was admitted.
+
+### Notes
+
+- No plugin-API version change: the files arrive in the existing `PluginContext.config` as a `ConfigValue::Table`. The key is absent at runtime, where the files are genuinely on disk and the OS filesystem layer serves them, so `process()` is untouched.
+- `coraza_validate_directives` takes an additional `staged_files_json` parameter (NULL when the request carried no data files). This is the plugin's own Rust↔Go FFI, not the plugin API, so it affects nothing outside this repository.
+- The empty-glob promotion is keyed on Coraza's message text, because Coraza attaches no structured field naming the pattern — only a line number. `TestPromoteEmptyGlobs_MatchesCorazaWording` fails if an upgrade changes the wording, since a silent no-op there would return the gate to fail-open.
+
 ## [0.8.0] - 2026-07-26
 
 ### Added
