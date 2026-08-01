@@ -8,8 +8,8 @@ use std::{
 };
 
 use haproxy_spoa_hub_plugin_api::{
-    Diagnostic, MetricRecorder, ProcessingResult, RString, RVec, SpoeMessage, SpoeValue,
-    TxnVariable, define_plugin,
+    ConfigValue, Diagnostic, MetricRecorder, PluginContext, ProcessingResult, RString, RVec,
+    SpoeMessage, SpoeValue, TxnVariable, define_plugin,
 };
 
 use crate::config::PluginConfig;
@@ -186,9 +186,10 @@ define_plugin!(CorazaPlugin, {
         // `plugin_loader::collect_schema_errors`), so we only do
         // semantic (Coraza-parser) checks here.
         let config = PluginConfig::from_context(context);
-        let mut diagnostics = validate_directives_string(&config.directives);
+        let staged = staged_files_json(context);
+        let mut diagnostics = validate_directives_string(&config.directives, &staged);
         for app in &config.applications {
-            for mut d in validate_directives_string(&app.directives) {
+            for mut d in validate_directives_string(&app.directives, &staged) {
                 let mut prefixed = String::with_capacity(d.message.len() + app.name.len() + 16);
                 prefixed.push_str("application '");
                 prefixed.push_str(&app.name);
@@ -204,9 +205,42 @@ define_plugin!(CorazaPlugin, {
     metrics_static = METRICS;
 });
 
+/// Config key under which the hub's validator hands over the request's data
+/// files, as a table of path -> content. Contract owned by the hub
+/// (`crates/hub/src/validate/orchestrator.rs`); absent at runtime, where the
+/// files are really on disk and the OS filesystem layer serves them.
+const STAGED_FILES_KEY: &str = "__staged_files";
+
+/// Extract the staged files as a JSON object for the FFI hop.
+///
+/// Returns an empty string when the key is absent — the ordinary case for a
+/// config whose directives include nothing off disk, and for every runtime
+/// call. Non-string entries are skipped rather than failing the whole
+/// validation: the hub only ever sends strings, so a stray value means a
+/// future protocol addition this build predates.
+fn staged_files_json(context: &PluginContext) -> String {
+    let Some(ConfigValue::Table(files)) = context.config.get(&RString::from(STAGED_FILES_KEY))
+    else {
+        return String::new();
+    };
+    let mut map = serde_json::Map::with_capacity(files.len());
+    for entry in files.iter() {
+        if let Some(content) = entry.1.as_str() {
+            map.insert(
+                entry.0.as_str().to_owned(),
+                serde_json::Value::String(content.to_owned()),
+            );
+        }
+    }
+    if map.is_empty() {
+        return String::new();
+    }
+    serde_json::Value::Object(map).to_string()
+}
+
 /// Compile a SecLang directives string via Coraza, return any
 /// captured warnings/errors as `plugin_api::Diagnostic` values.
-fn validate_directives_string(directives: &str) -> Vec<Diagnostic> {
+fn validate_directives_string(directives: &str, staged_files_json: &str) -> Vec<Diagnostic> {
     if directives.is_empty() {
         return Vec::new();
     }
@@ -231,7 +265,18 @@ fn validate_directives_string(directives: &str) -> Vec<Diagnostic> {
             )];
         }
     };
-    let json_ptr = unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len) };
+    // An interior NUL in the staged payload means a caller sent a file the
+    // FFI cannot represent unambiguously. Validate without it rather than
+    // truncating at the NUL: a silently shortened file set would compile a
+    // ruleset nobody is going to deploy.
+    let staged_c = if staged_files_json.is_empty() || staged_files_json.as_bytes().contains(&0) {
+        None
+    } else {
+        Some(to_cstring(staged_files_json))
+    };
+    let staged_ptr = staged_c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
+
+    let json_ptr = unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len, staged_ptr) };
     if json_ptr.is_null() {
         return Vec::new();
     }
@@ -747,6 +792,97 @@ fn extract_bytes_as_headers(value: Option<&SpoeValue>) -> Vec<u8> {
         Some(SpoeValue::Binary(b)) => parse_haproxy_headers(b.as_slice()),
         Some(SpoeValue::String(s)) => parse_haproxy_headers(s.as_bytes()),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod staged_files_tests {
+    //! The hub's validator hands over the request's data files under
+    //! `__staged_files` so directives that Include a path off the HAProxy
+    //! pod's disk can be compiled by a validator that has no such disk.
+
+    use super::*;
+    use haproxy_spoa_hub_plugin_api::{ConfigValue, PluginContext, RHashMap};
+
+    fn ctx_with_staged(entries: Vec<(&str, ConfigValue)>) -> PluginContext {
+        let mut files = RHashMap::new();
+        for (k, v) in entries {
+            files.insert(RString::from(k), v);
+        }
+        let mut config = RHashMap::new();
+        config.insert(RString::from(STAGED_FILES_KEY), ConfigValue::Table(files));
+        PluginContext {
+            name: RString::from("coraza"),
+            config,
+        }
+    }
+
+    // Absent is the ordinary case: every runtime call, and any config whose
+    // directives include nothing off disk.
+    #[test]
+    fn absent_key_yields_empty_payload() {
+        let ctx = PluginContext {
+            name: RString::from("coraza"),
+            config: RHashMap::new(),
+        };
+        assert_eq!(staged_files_json(&ctx), "");
+    }
+
+    #[test]
+    fn staged_files_become_a_json_object() {
+        let ctx = ctx_with_staged(vec![(
+            "/etc/haproxy/general/crs/a.conf",
+            ConfigValue::String(RString::from("SecAction id:1")),
+        )]);
+
+        let payload = staged_files_json(&ctx);
+
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(
+            parsed["/etc/haproxy/general/crs/a.conf"],
+            serde_json::Value::String("SecAction id:1".into())
+        );
+    }
+
+    // An empty table must read as "nothing staged", not as an empty JSON
+    // object: the Go side would build a staged filesystem with no entries,
+    // which shadows nothing but costs a merge layer on every validation.
+    #[test]
+    fn empty_table_yields_empty_payload() {
+        let ctx = ctx_with_staged(vec![]);
+        assert_eq!(staged_files_json(&ctx), "");
+    }
+
+    // A non-string entry means a protocol addition this build predates.
+    // Skipping it keeps the files this build does understand usable, rather
+    // than failing validation over a value it was never going to read.
+    #[test]
+    fn non_string_entries_are_skipped() {
+        let ctx = ctx_with_staged(vec![
+            ("/a.conf", ConfigValue::String(RString::from("keep"))),
+            ("/b.conf", ConfigValue::Integer(42)),
+        ]);
+
+        let parsed: serde_json::Value = serde_json::from_str(&staged_files_json(&ctx)).unwrap();
+
+        assert_eq!(parsed.as_object().unwrap().len(), 1);
+        assert!(parsed.get("/a.conf").is_some());
+        assert!(parsed.get("/b.conf").is_none());
+    }
+
+    // The wrong ConfigValue shape entirely — not a table — must not panic.
+    #[test]
+    fn non_table_value_yields_empty_payload() {
+        let mut config = RHashMap::new();
+        config.insert(
+            RString::from(STAGED_FILES_KEY),
+            ConfigValue::String(RString::from("not a table")),
+        );
+        let ctx = PluginContext {
+            name: RString::from("coraza"),
+            config,
+        };
+        assert_eq!(staged_files_json(&ctx), "");
     }
 }
 
