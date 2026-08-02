@@ -70,6 +70,7 @@ request_body_in_memory_limit = 131072
 | `matched_data_log` | string | `none` | Matched-data logging mode: `none`, `hash`, or bounded `truncate` |
 | `matched_data_max_bytes` | int | 128 | Bound for truncated logs and exposed matched data |
 | `expose_matched_data` | bool | false | Expose bounded interruption data as a transaction variable |
+| `rule_watch_interval_ms` | int | 15000 | How often to re-check the rule files named by `Include` directives, recompiling in place when they change; `0` disables |
 | `applications` | table | empty | Named WAF policies; omitted fields inherit the effective top-level policy |
 
 Request-body access is controlled by SecLang, not by the numeric limit alone.

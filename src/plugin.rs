@@ -2,9 +2,10 @@ use std::ffi::{CStr, c_char, c_int};
 use std::{
     collections::HashMap,
     sync::{
-        RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use haproxy_spoa_hub_plugin_api::{
@@ -14,6 +15,7 @@ use haproxy_spoa_hub_plugin_api::{
 
 use crate::config::PluginConfig;
 use crate::ffi::{self, CorazaResult, to_cstring};
+use crate::watcher::{self, Fingerprint, RuleWatcher};
 
 static TX_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -102,13 +104,88 @@ static METRICS: MetricRecorder = MetricRecorder::new();
 
 #[derive(Debug)]
 struct CorazaPlugin {
-    state: RwLock<State>,
+    // Shared with the rule-file watcher thread, which rebuilds the generation
+    // against this same state. An Arc rather than a borrow so the state cannot
+    // be freed while that thread is between its stop check and its next use.
+    state: Arc<RwLock<State>>,
+    // Replaced on every init; dropping the previous handle stops and joins its
+    // thread, so a reconfigure never leaves two watchers rebuilding one plugin.
+    watcher: Mutex<Option<RuleWatcher>>,
+}
+
+impl CorazaPlugin {
+    /// Replace the rule-file watcher for a new configuration.
+    ///
+    /// Dropping the previous handle stops and joins its thread first, so a
+    /// reconfigure can never leave two watchers rebuilding one plugin.
+    fn restart_rule_watcher(&self, globs: Vec<String>, interval: Duration, baseline: Fingerprint) {
+        let mut slot = self
+            .watcher
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        *slot = None;
+
+        // A zero interval means watching is off, as documented. Passing it on
+        // would not sleep at all: the poll loop would spin a core stat-ing the
+        // rule files, which is the opposite of disabling it.
+        if globs.is_empty() || interval.is_zero() {
+            return;
+        }
+
+        log::info!(
+            "Coraza watching {} rule glob(s) for changes every {:?}",
+            globs.len(),
+            interval
+        );
+        let state = Arc::clone(&self.state);
+        *slot = Some(RuleWatcher::spawn(globs, interval, baseline, move || {
+            rebuild_generation(&state);
+        }));
+    }
+}
+
+/// Recompile the WAF from the current config and swap it in.
+///
+/// The build happens outside the write lock: compiling a full rule set takes
+/// long enough that holding the lock would stall every request for its
+/// duration, and the point of a local reload is that traffic does not notice.
+///
+/// A failed build keeps the running generation. The rule files are written by
+/// something else and can be observed mid-batch, so "does not compile right
+/// now" is an expected transient — retrying on the next poll is correct, and
+/// serving the previous rules meanwhile is strictly better than serving none.
+fn rebuild_generation(state: &Arc<RwLock<State>>) {
+    let config = {
+        let guard = state.read().unwrap_or_else(|error| error.into_inner());
+        guard.config.clone()
+    };
+
+    match WafGeneration::build(&config) {
+        Ok(generation) => {
+            let mut guard = state.write().unwrap_or_else(|error| error.into_inner());
+            guard.generation = Some(generation);
+            drop(guard);
+            log::info!("Coraza reloaded its rule set after an on-disk change");
+            METRICS.counter("plugin_coraza_rule_reloads_total", &[("result", "ok")], 1);
+        }
+        Err(error) => {
+            // Loud: a WAF quietly serving rules older than the ones on disk is
+            // the failure this whole path exists to avoid.
+            log::warn!("Coraza rule reload failed, keeping the running rule set: {error}");
+            METRICS.counter(
+                "plugin_coraza_rule_reloads_total",
+                &[("result", "failed")],
+                1,
+            );
+        }
+    }
 }
 
 define_plugin!(CorazaPlugin, {
     fn new() -> Self {
         CorazaPlugin {
-            state: RwLock::new(State::default()),
+            state: Arc::new(RwLock::new(State::default())),
+            watcher: Mutex::new(None),
         }
     }
 
@@ -117,6 +194,11 @@ define_plugin!(CorazaPlugin, {
         context: &PluginContext,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = PluginConfig::from_context(context);
+        let watch_globs = config.rule_watch_globs();
+        let watch_interval = config.rule_watch_interval();
+        // Before the build, never after: a rule file written between the two is
+        // then a change the watcher still sees.
+        let baseline = watcher::fingerprint(&watch_globs);
 
         let generation = WafGeneration::build(&config)
             .map_err(|error| format!("failed to build Coraza generation: {error}"))?;
@@ -129,6 +211,9 @@ define_plugin!(CorazaPlugin, {
             generation: Some(generation),
             config,
         };
+        drop(state);
+
+        self.restart_rule_watcher(watch_globs, watch_interval, baseline);
 
         Ok(())
     }
@@ -819,6 +904,7 @@ mod staged_files_tests {
 
     // Absent is the ordinary case: every runtime call, and any config whose
     // directives include nothing off disk.
+
     #[test]
     fn absent_key_yields_empty_payload() {
         let ctx = PluginContext {
@@ -1184,8 +1270,192 @@ mod reload_tests {
     use haproxy_spoa_hub_plugin_api::{
         ConfigValue, PluginContext, RHashMap, RString, SpoeMessage, SpoeValue,
     };
+    use std::thread;
 
     static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    // The whole point of the feature: a rule file changing on disk must change
+    // the WAF that serves traffic, with no reload of the hub. Exercises the
+    // real chain — Include-derived globs, the poll, the rebuild, the swap.
+    #[test]
+    fn recompiles_the_waf_when_a_rule_file_changes_on_disk() {
+        // Serialises against the WAF-count leak assertions: the handle count
+        // is process-global, and this test keeps a live WAF across its sleeps.
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let dir = rule_dir("reload");
+        std::fs::write(
+            dir.join("crs-rules.conf"),
+            "SecRule REQUEST_HEADERS:User-Agent \"@streq bad\" \"id:1,phase:1,deny\"\n",
+        )
+        .expect("seed rule file");
+
+        let directives = format!(
+            "SecRuleEngine On\nInclude {}/crs-*.conf\n",
+            dir.to_string_lossy()
+        );
+        let mut context = make_context(&directives);
+        context.config.insert(
+            RString::from("rule_watch_interval_ms"),
+            ConfigValue::Integer(50),
+        );
+
+        assert_eq!(
+            PluginConfig::from_context(&context).rule_watch_interval(),
+            Duration::from_millis(50),
+            "the test's poll interval must reach the watcher"
+        );
+        assert_eq!(
+            PluginConfig::from_context(&context).rule_watch_globs(),
+            vec![format!("{}/crs-*.conf", dir.to_string_lossy())],
+            "the Include must be derived into a watch glob"
+        );
+
+        let mut plugin = CorazaPlugin::__new();
+        plugin.__init(&context).expect("init");
+        assert_eq!(rules_now(&plugin), 1, "seeded rule set must compile");
+
+        std::fs::write(
+            dir.join("crs-rules.conf"),
+            "SecRule REQUEST_HEADERS:User-Agent \"@streq bad\" \"id:1,phase:1,deny\"\n\
+             SecRule REQUEST_HEADERS:User-Agent \"@streq worse\" \"id:2,phase:1,deny\"\n",
+        )
+        .expect("update rule file");
+
+        assert!(
+            wait_for_rules(&plugin, 2),
+            "an updated rule file must be recompiled without a hub reload; \
+             rule count stayed at {}",
+            rules_now(&plugin)
+        );
+    }
+
+    // A rule set that stops compiling must not disarm the WAF: the previous
+    // generation keeps serving until a good one replaces it.
+    #[test]
+    fn keeps_the_running_rule_set_when_a_reload_fails_to_compile() {
+        // Serialises against the WAF-count leak assertions: the handle count
+        // is process-global, and this test keeps a live WAF across its sleeps.
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let dir = rule_dir("badreload");
+        std::fs::write(dir.join("crs-rules.conf"), "SecRuleEngine On\n").expect("seed");
+
+        let directives = format!(
+            "SecRuleEngine On\nInclude {}/crs-*.conf\n",
+            dir.to_string_lossy()
+        );
+        let mut context = make_context(&directives);
+        context.config.insert(
+            RString::from("rule_watch_interval_ms"),
+            ConfigValue::Integer(50),
+        );
+
+        let mut plugin = CorazaPlugin::__new();
+        plugin.__init(&context).expect("init");
+        let before = rules_now(&plugin);
+
+        std::fs::write(dir.join("crs-rules.conf"), "This Is Not SecLang At All\n")
+            .expect("break the rule file");
+        thread::sleep(Duration::from_millis(400));
+
+        assert_eq!(
+            rules_now(&plugin),
+            before,
+            "a rule set that fails to compile must leave the running one in place"
+        );
+    }
+
+    #[test]
+    fn watch_globs_cover_every_application_and_skip_embedded_includes() {
+        let dir = "/etc/haproxy/general";
+        let context = make_context_with_app(
+            &format!("Include @coraza.conf-recommended\nInclude {dir}/crs-*.conf\n"),
+            "shop",
+            &format!("Include {dir}/shop-*.conf\n"),
+        );
+        let config = PluginConfig::from_context(&context);
+
+        assert_eq!(
+            config.rule_watch_globs(),
+            vec![format!("{dir}/crs-*.conf"), format!("{dir}/shop-*.conf"),],
+            "every application's on-disk includes must be watched, and only those"
+        );
+    }
+
+    #[test]
+    fn watching_is_off_when_no_include_names_a_file_on_disk() {
+        let context = make_context("Include @coraza.conf-recommended\nSecRuleEngine On\n");
+        assert!(
+            PluginConfig::from_context(&context)
+                .rule_watch_globs()
+                .is_empty(),
+            "an embedded-only rule set has nothing on disk to watch"
+        );
+    }
+
+    // Documented as the off switch. It must not reach the poll loop, which does
+    // not sleep on a zero interval and would spin a core instead.
+    #[test]
+    fn a_zero_interval_disables_watching() {
+        // Serialises against the WAF-count leak assertions: the handle count
+        // is process-global, and this test keeps a live WAF across its sleeps.
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let dir = rule_dir("disabled");
+        std::fs::write(dir.join("crs-rules.conf"), "SecRuleEngine On\n").expect("seed");
+
+        let directives = format!(
+            "SecRuleEngine On\nInclude {}/crs-*.conf\n",
+            dir.to_string_lossy()
+        );
+        let mut context = make_context(&directives);
+        context.config.insert(
+            RString::from("rule_watch_interval_ms"),
+            ConfigValue::Integer(0),
+        );
+
+        let mut plugin = CorazaPlugin::__new();
+        plugin.__init(&context).expect("init");
+        let before = rules_now(&plugin);
+
+        std::fs::write(
+            dir.join("crs-rules.conf"),
+            "SecRule REQUEST_HEADERS:User-Agent \"@streq bad\" \"id:1,phase:1,deny\"\n",
+        )
+        .expect("update rule file");
+        thread::sleep(Duration::from_millis(400));
+
+        assert_eq!(
+            rules_now(&plugin),
+            before,
+            "rule_watch_interval_ms=0 must leave the rule set alone"
+        );
+    }
+
+    fn rules_now(plugin: &CorazaPlugin) -> i32 {
+        let state = plugin
+            .state
+            .read()
+            .unwrap_or_else(|error| error.into_inner());
+        let generation = state.generation.as_ref().expect("generation");
+        unsafe { ffi::coraza_waf_rules_count(generation.default.0) }
+    }
+
+    fn wait_for_rules(plugin: &CorazaPlugin, want: i32) -> bool {
+        for _ in 0..40 {
+            if rules_now(plugin) == want {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    fn rule_dir(tag: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("coraza-rule-reload-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("mkdir");
+        path
+    }
 
     fn make_context(directives: &str) -> PluginContext {
         let mut config = RHashMap::new();

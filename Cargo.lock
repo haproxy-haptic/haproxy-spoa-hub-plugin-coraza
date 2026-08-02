@@ -195,9 +195,10 @@ dependencies = [
 
 [[package]]
 name = "coraza-plugin"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "criterion",
+ "glob",
  "haproxy-spoa-hub-plugin-api",
  "log",
  "serde",
@@ -314,6 +315,12 @@ checksum = "877e94aff08e743b651baaea359664321055749b398adff8740a7399af7796e7"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "half"

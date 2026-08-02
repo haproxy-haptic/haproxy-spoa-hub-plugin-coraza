@@ -4,3 +4,4 @@ pub mod config;
 pub mod ffi;
 
 mod plugin;
+pub mod watcher;
