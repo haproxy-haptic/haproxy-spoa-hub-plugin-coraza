@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-02
+
 ### Added
 
 - `validate()` now compiles directives against the **files the validator was handed**, not just the embedded CRS and the local filesystem. The hub's validator passes the request's data files under the `__staged_files` config key (haproxy-spoa-hub !220), and they are layered between the embedded CRS and the OS filesystem — so an `Include /etc/haproxy/general/crs/*.conf` resolves against the ruleset about to be deployed. The validator runs in the controller pod, where that path does not exist, so before this such a config could only be validated by not checking the ruleset at all.
