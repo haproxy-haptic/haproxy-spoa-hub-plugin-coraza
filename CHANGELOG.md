@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-02
+
+### Added
+
+- The plugin now recompiles its own WAF when the rule files its `Include` directives name change on disk, without a hub reload. This is what makes a fetched OWASP CRS release actually take effect: the hub reloads on its **config file** changing, and a rule set delivered as separate files never changes that file — an `Include` of a glob is the same string whatever the glob matches — so a refreshed rule set would otherwise sit on disk unused until some unrelated config change happened to reload the hub.
+
+  The watch set is derived from the directives rather than configured separately, so it is by construction the files that were compiled — every application's own `Include`s included, and `directives_file`. `Include @…` targets are skipped: they live in the binary and cannot change without a new image.
+
+  `rule_watch_interval_ms` (default 15000, `0` disables) sets the poll interval. Polling rather than inotify: a full inotify queue drops events, and a missed event here is permanent — the files then stay as they are, so nothing fires again and the old rules are served indefinitely. Polling also coalesces a multi-file batch for free and tolerates a directory that does not exist yet.
+
+### Security
+
+- A change must hold still for one poll interval before it is compiled. The rule set is delivered as one write per file, so a poll can land mid-batch — and a partial rule set compiles perfectly well, which would leave the WAF running short of rules while looking healthy.
+
+- A rule set that fails to compile leaves the running one in place. The files are written by something else and can be observed mid-batch, so "does not compile right now" is an expected transient; serving the previous rules until the next poll is strictly better than a WAF with no rules. Failures are logged and counted (`plugin_coraza_rule_reloads_total{result="failed"}`).
+
+### Notes
+
+- The baseline fingerprint is taken by `init` **before** it compiles the rules, not by the watcher thread on its first run. A thread-taken baseline loses every write landing between the two, and because the fingerprint then already matches the new files, nothing fires again and the stale rules are served forever. `fires_for_a_change_that_lands_before_the_thread_starts` pins this.
+- The swap reuses the generation lease the hub-reload path already relies on, so it is safe for response correlation: `process` holds the state read lock for the whole call, so a swap waits for in-flight requests, and `destroyWAF` retires a handle with cached response transactions instead of closing it, leaving the last transaction to close it. A request that starts before a reload finishes against the rules it started with.
+- No plugin-API change, and no configuration change is required to adopt it: an existing config whose directives `Include` a path on disk starts watching it.
+
 ## [0.9.0] - 2026-08-02
 
 ### Added

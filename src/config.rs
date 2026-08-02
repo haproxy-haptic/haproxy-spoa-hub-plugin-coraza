@@ -1,9 +1,12 @@
+use std::time::Duration;
+
 use haproxy_spoa_hub_plugin_api::{ConfigValue, PluginContext, RHashMap, RString, Tuple2};
 
 const MAX_BODY_LIMIT: i64 = 1_073_741_824;
 const MAX_MATCHED_DATA_BYTES: i64 = 4096;
 const MAX_TRANSACTION_TTL_MS: i64 = 86_400_000;
 const MAX_CACHED_TRANSACTIONS: i64 = 1_000_000;
+const MAX_RULE_WATCH_INTERVAL_MS: i64 = 3_600_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchedDataLog {
@@ -54,7 +57,7 @@ pub struct AppConfig {
 }
 
 /// Plugin configuration parsed from hub's `[plugins.params]` TOML table.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PluginConfig {
     pub directives: String,
     pub directives_file: Option<String>,
@@ -69,7 +72,61 @@ pub struct PluginConfig {
     pub matched_data_log: MatchedDataLog,
     pub matched_data_max_bytes: i32,
     pub expose_matched_data: bool,
+    pub rule_watch_interval_ms: i32,
     pub applications: Vec<AppConfig>,
+}
+
+/// Marks an `Include` target that lives in the binary rather than on disk
+/// (`@coraza.conf-recommended`, `@owasp_crs/*.conf`). Those cannot change
+/// without a new image, so watching them would be pure cost.
+const EMBEDDED_INCLUDE_PREFIX: char = '@';
+
+impl PluginConfig {
+    pub fn rule_watch_interval(&self) -> Duration {
+        Duration::from_millis(self.rule_watch_interval_ms.max(0) as u64)
+    }
+
+    /// The on-disk paths the compiled rule set was built from.
+    ///
+    /// Derived from the directives rather than configured separately, so the
+    /// watch set is by construction the set of files that were compiled —
+    /// including every application's own directives, and including a glob
+    /// whose matches change as rule files come and go.
+    pub fn rule_watch_globs(&self) -> Vec<String> {
+        let mut globs: Vec<String> = Vec::new();
+        let blocks = std::iter::once(&self.directives)
+            .chain(self.applications.iter().map(|app| &app.directives));
+        for block in blocks {
+            collect_include_paths(block, &mut globs);
+        }
+        globs.extend(
+            std::iter::once(&self.directives_file)
+                .chain(self.applications.iter().map(|app| &app.directives_file))
+                .flatten()
+                .cloned(),
+        );
+        globs.sort();
+        globs.dedup();
+        globs
+    }
+}
+
+/// Pull the on-disk targets out of a SecLang block's `Include` directives.
+fn collect_include_paths(directives: &str, out: &mut Vec<String>) {
+    for line in directives.lines() {
+        let line = line.trim();
+        let Some(rest) = line
+            .strip_prefix("Include ")
+            .or_else(|| line.strip_prefix("include "))
+        else {
+            continue;
+        };
+        let target = rest.trim().trim_matches('"');
+        if target.is_empty() || target.starts_with(EMBEDDED_INCLUDE_PREFIX) {
+            continue;
+        }
+        out.push(target.to_string());
+    }
 }
 
 const DEFAULT_DIRECTIVES: &str = concat!(
@@ -98,6 +155,7 @@ impl Default for PluginConfig {
             matched_data_log: MatchedDataLog::None,
             matched_data_max_bytes: 128,
             expose_matched_data: false,
+            rule_watch_interval_ms: 15000,
             applications: Vec::new(),
         }
     }
@@ -196,6 +254,14 @@ impl PluginConfig {
         )
         .max(1);
 
+        let rule_watch_interval_ms = bounded_i32(
+            context
+                .get_config("rule_watch_interval_ms")
+                .and_then(|v| v.as_integer()),
+            defaults.rule_watch_interval_ms,
+            MAX_RULE_WATCH_INTERVAL_MS,
+        );
+
         let rule_match_log = context
             .get_config("rule_match_log")
             .and_then(|v| v.as_bool())
@@ -260,6 +326,7 @@ impl PluginConfig {
             matched_data_log,
             matched_data_max_bytes,
             expose_matched_data,
+            rule_watch_interval_ms,
             applications,
         }
     }
@@ -309,6 +376,13 @@ impl PluginConfig {
                     "type": "boolean",
                     "default": false,
                     "description": "Default log-only mode for request and response inspection. May be overridden per SPOE message."
+                },
+                "rule_watch_interval_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3600000,
+                    "default": 15000,
+                    "description": "How often to check the rule files named by Include directives for changes, recompiling the WAF in place when they change. 0 disables watching."
                 },
                 "transaction_ttl_ms": {
                     "type": "integer",
