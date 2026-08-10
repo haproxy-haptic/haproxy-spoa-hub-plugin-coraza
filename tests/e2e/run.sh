@@ -41,7 +41,9 @@ assert_eq() {
 
 assert_contains() {
     local desc="$1" expected="$2" actual="$3"
-    if echo "$actual" | grep -qF "$expected"; then
+    # Match in-shell: with `| grep -q`, grep exits on first match, the
+    # producer takes SIGPIPE, and pipefail reports 141 -- a match read as a miss.
+    if [[ "$actual" == *"$expected"* ]]; then
         echo "  PASS: $desc"
         PASS=$((PASS + 1))
     else
