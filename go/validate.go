@@ -27,7 +27,6 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/KimMachineGun/automemlimit/memlimit"
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/debuglog"
@@ -35,12 +34,6 @@ import (
 	"github.com/jcchavezs/mergefs"
 	osfs "github.com/jcchavezs/mergefs/io"
 )
-
-// The host and other native plugins need headroom outside this Go runtime.
-var configureValidationMemory = sync.OnceValue(func() error {
-	_, err := memlimit.Set(memlimit.WithRatio(0.4))
-	return err
-})
 
 var validationCompileSlots = make(chan struct{}, 2)
 var previousValidationMu sync.Mutex
@@ -164,9 +157,6 @@ func validateDirectives(directives, stagedFilesJSON string) []capturedDiagnostic
 // diagnostics as reported, before any severity promotion. Split out so a test
 // can assert the wording the promotion keys on.
 func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnostic {
-	if err := configureValidationMemory(); err != nil {
-		return []capturedDiagnostic{{Severity: "error", Message: "configure validation memory budget: " + err.Error()}}
-	}
 	validationCompileSlots <- struct{}{}
 	defer func() { <-validationCompileSlots }()
 

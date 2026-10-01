@@ -90,6 +90,8 @@ unsafe extern "C" {
         staged_files_json: *const c_char,
     ) -> *mut c_char;
 
+    pub fn coraza_configure_validation_memory();
+
     // Utilities
     pub fn coraza_free_string(s: *mut c_char);
     pub fn coraza_last_error() -> *mut c_char;

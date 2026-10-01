@@ -250,6 +250,10 @@ define_plugin!(CorazaPlugin, {
     }
 
     fn validate(&self, context: &PluginContext) -> Vec<Diagnostic> {
+        if is_validation_only(context) {
+            // SAFETY: no pointers cross this call; Go serializes budget initialization.
+            unsafe { ffi::coraza_configure_validation_memory() };
+        }
         let config = PluginConfig::from_context(context);
         let staged = CString::new(staged_files_json(context)).expect("JSON escapes null bytes");
         let mut diagnostics = validate_directives_string(&config.directives, &staged);
@@ -269,6 +273,14 @@ define_plugin!(CorazaPlugin, {
 
     metrics_static = METRICS;
 });
+
+// Set only by the dedicated validator; runtime load/reload validation must not retune Go.
+fn is_validation_only(context: &PluginContext) -> bool {
+    matches!(
+        context.config.get(&RString::from("__validation_only")),
+        Some(ConfigValue::Bool(true))
+    )
+}
 
 /// Config key under which the hub's validator hands over the request's data
 /// files, as a table of path -> content. Contract owned by the hub
@@ -957,6 +969,21 @@ mod validate_tests {
             name: RString::from("coraza"),
             config,
         }
+    }
+
+    #[test]
+    fn memory_budget_requires_dedicated_validation_context() {
+        assert!(!is_validation_only(&ctx_with(vec![])));
+        for value in [ConfigValue::Bool(false), ConfigValue::String("true".into())] {
+            assert!(!is_validation_only(&ctx_with(vec![(
+                "__validation_only",
+                value
+            )])));
+        }
+        assert!(is_validation_only(&ctx_with(vec![(
+            "__validation_only",
+            ConfigValue::Bool(true)
+        )])));
     }
 
     #[test]
