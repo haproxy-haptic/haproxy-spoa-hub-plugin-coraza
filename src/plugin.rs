@@ -1,4 +1,4 @@
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::{CStr, CString, c_char, c_int};
 use std::{
     collections::HashMap,
     sync::{
@@ -250,28 +250,12 @@ define_plugin!(CorazaPlugin, {
     }
 
     fn validate(&self, context: &PluginContext) -> Vec<Diagnostic> {
-        // Pure SecLang compile-check via coraza.NewWAF, capturing
-        // parser line numbers from the WAF's debug logger. No side
-        // effects: NewWAF allocates rule structures + compiles
-        // regexes but doesn't open sockets, spawn goroutines, or
-        // touch shared state. The WAF instance is dropped at the end
-        // of this call.
-        //
-        // Validates BOTH the top-level `directives` field and each
-        // per-application `applications.<name>.directives` field. Per-
-        // app directives are HAPTIC's primary path for per-Ingress
-        // modsecurity-snippet wiring.
-        //
-        // Routes through `PluginConfig::from_context` rather than
-        // walking the raw `PluginContext` so the schema understood
-        // here exactly matches what `init()` consumes — single source
-        // of truth, no parallel parser, no drift. The hub guarantees
-        // the context already satisfies `config_schema()` before
-        // calling `validate()` (haproxy-spoa-hub v0.5.2+
-        // `plugin_loader::collect_schema_errors`), so we only do
-        // semantic (Coraza-parser) checks here.
+        if is_validation_only(context) {
+            // SAFETY: no pointers cross this call; Go serializes budget initialization.
+            unsafe { ffi::coraza_configure_validation_memory() };
+        }
         let config = PluginConfig::from_context(context);
-        let staged = staged_files_json(context);
+        let staged = CString::new(staged_files_json(context)).expect("JSON escapes null bytes");
         let mut diagnostics = validate_directives_string(&config.directives, &staged);
         for app in &config.applications {
             for mut d in validate_directives_string(&app.directives, &staged) {
@@ -289,6 +273,14 @@ define_plugin!(CorazaPlugin, {
 
     metrics_static = METRICS;
 });
+
+// Set only by the dedicated validator; runtime load/reload validation must not retune Go.
+fn is_validation_only(context: &PluginContext) -> bool {
+    matches!(
+        context.config.get(&RString::from("__validation_only")),
+        Some(ConfigValue::Bool(true))
+    )
+}
 
 /// Config key under which the hub's validator hands over the request's data
 /// files, as a table of path -> content. Contract owned by the hub
@@ -308,24 +300,19 @@ fn staged_files_json(context: &PluginContext) -> String {
     else {
         return String::new();
     };
-    let mut map = serde_json::Map::with_capacity(files.len());
-    for entry in files.iter() {
-        if let Some(content) = entry.1.as_str() {
-            map.insert(
-                entry.0.as_str().to_owned(),
-                serde_json::Value::String(content.to_owned()),
-            );
-        }
-    }
+    let map: std::collections::BTreeMap<&str, &str> = files
+        .iter()
+        .filter_map(|entry| entry.1.as_str().map(|content| (entry.0.as_str(), content)))
+        .collect();
     if map.is_empty() {
         return String::new();
     }
-    serde_json::Value::Object(map).to_string()
+    serde_json::to_string(&map).expect("string map serializes as JSON")
 }
 
 /// Compile a SecLang directives string via Coraza, return any
 /// captured warnings/errors as `plugin_api::Diagnostic` values.
-fn validate_directives_string(directives: &str, staged_files_json: &str) -> Vec<Diagnostic> {
+fn validate_directives_string(directives: &str, staged_files_json: &CStr) -> Vec<Diagnostic> {
     if directives.is_empty() {
         return Vec::new();
     }
@@ -350,18 +337,10 @@ fn validate_directives_string(directives: &str, staged_files_json: &str) -> Vec<
             )];
         }
     };
-    // An interior NUL in the staged payload means a caller sent a file the
-    // FFI cannot represent unambiguously. Validate without it rather than
-    // truncating at the NUL: a silently shortened file set would compile a
-    // ruleset nobody is going to deploy.
-    let staged_c = if staged_files_json.is_empty() || staged_files_json.as_bytes().contains(&0) {
-        None
-    } else {
-        Some(to_cstring(staged_files_json))
-    };
-    let staged_ptr = staged_c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
 
-    let json_ptr = unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len, staged_ptr) };
+    let json_ptr = unsafe {
+        ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len, staged_files_json.as_ptr())
+    };
     if json_ptr.is_null() {
         return Vec::new();
     }
@@ -990,6 +969,21 @@ mod validate_tests {
             name: RString::from("coraza"),
             config,
         }
+    }
+
+    #[test]
+    fn memory_budget_requires_dedicated_validation_context() {
+        assert!(!is_validation_only(&ctx_with(vec![])));
+        for value in [ConfigValue::Bool(false), ConfigValue::String("true".into())] {
+            assert!(!is_validation_only(&ctx_with(vec![(
+                "__validation_only",
+                value
+            )])));
+        }
+        assert!(is_validation_only(&ctx_with(vec![(
+            "__validation_only",
+            ConfigValue::Bool(true)
+        )])));
     }
 
     #[test]

@@ -3,6 +3,7 @@ module github.com/haproxy-spoa-hub/coraza-plugin
 go 1.25.0
 
 require (
+	github.com/KimMachineGun/automemlimit v1.0.0
 	github.com/corazawaf/coraza-coreruleset/v4 v4.25.0
 	github.com/corazawaf/coraza/v3 v3.7.0
 	github.com/jcchavezs/mergefs v0.1.1
@@ -20,6 +21,7 @@ require (
 	github.com/magefile/mage v1.17.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/petar-dambovaliev/aho-corasick v0.0.0-20250424160509-463d218d4745 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -32,3 +34,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
+
+// Release failed WAF ownership; remove when an upstream release includes this fix.
+replace github.com/corazawaf/coraza/v3 => gitlab.com/haproxy-haptic/coraza/v3 v3.7.1-0.20261001204241-9bcc190ac0bf
