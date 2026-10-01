@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Retain only the latest validation cache, release failed and superseded WAF resources, and bound concurrent rule compilation.
+- Retain only the latest validation cache, release failed and superseded WAF resources, bound concurrent rule compilation, and reserve container memory for the native host.
 
 ## [0.10.0] - 2026-08-02
 

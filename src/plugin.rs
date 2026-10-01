@@ -1,4 +1,4 @@
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::{CStr, CString, c_char, c_int};
 use std::{
     collections::HashMap,
     sync::{
@@ -251,7 +251,7 @@ define_plugin!(CorazaPlugin, {
 
     fn validate(&self, context: &PluginContext) -> Vec<Diagnostic> {
         let config = PluginConfig::from_context(context);
-        let staged = staged_files_json(context);
+        let staged = CString::new(staged_files_json(context)).expect("JSON escapes null bytes");
         let mut diagnostics = validate_directives_string(&config.directives, &staged);
         for app in &config.applications {
             for mut d in validate_directives_string(&app.directives, &staged) {
@@ -288,24 +288,19 @@ fn staged_files_json(context: &PluginContext) -> String {
     else {
         return String::new();
     };
-    let mut map = serde_json::Map::with_capacity(files.len());
-    for entry in files.iter() {
-        if let Some(content) = entry.1.as_str() {
-            map.insert(
-                entry.0.as_str().to_owned(),
-                serde_json::Value::String(content.to_owned()),
-            );
-        }
-    }
+    let map: std::collections::BTreeMap<&str, &str> = files
+        .iter()
+        .filter_map(|entry| entry.1.as_str().map(|content| (entry.0.as_str(), content)))
+        .collect();
     if map.is_empty() {
         return String::new();
     }
-    serde_json::Value::Object(map).to_string()
+    serde_json::to_string(&map).expect("string map serializes as JSON")
 }
 
 /// Compile a SecLang directives string via Coraza, return any
 /// captured warnings/errors as `plugin_api::Diagnostic` values.
-fn validate_directives_string(directives: &str, staged_files_json: &str) -> Vec<Diagnostic> {
+fn validate_directives_string(directives: &str, staged_files_json: &CStr) -> Vec<Diagnostic> {
     if directives.is_empty() {
         return Vec::new();
     }
@@ -330,18 +325,10 @@ fn validate_directives_string(directives: &str, staged_files_json: &str) -> Vec<
             )];
         }
     };
-    // An interior NUL in the staged payload means a caller sent a file the
-    // FFI cannot represent unambiguously. Validate without it rather than
-    // truncating at the NUL: a silently shortened file set would compile a
-    // ruleset nobody is going to deploy.
-    let staged_c = if staged_files_json.is_empty() || staged_files_json.as_bytes().contains(&0) {
-        None
-    } else {
-        Some(to_cstring(staged_files_json))
-    };
-    let staged_ptr = staged_c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
 
-    let json_ptr = unsafe { ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len, staged_ptr) };
+    let json_ptr = unsafe {
+        ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len, staged_files_json.as_ptr())
+    };
     if json_ptr.is_null() {
         return Vec::new();
     }
