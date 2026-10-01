@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Retain only the latest validation cache, release failed and superseded WAF resources, and bound concurrent rule compilation.
+
 ## [0.10.0] - 2026-08-02
 
 ### Added

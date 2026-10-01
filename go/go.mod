@@ -32,3 +32,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	rsc.io/binaryregexp v0.2.0 // indirect
 )
+
+// Release failed WAF ownership; remove when an upstream release includes this fix.
+replace github.com/corazawaf/coraza/v3 => gitlab.com/haproxy-haptic/coraza/v3 v3.7.1-0.20261001204241-9bcc190ac0bf

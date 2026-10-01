@@ -250,26 +250,6 @@ define_plugin!(CorazaPlugin, {
     }
 
     fn validate(&self, context: &PluginContext) -> Vec<Diagnostic> {
-        // Pure SecLang compile-check via coraza.NewWAF, capturing
-        // parser line numbers from the WAF's debug logger. No side
-        // effects: NewWAF allocates rule structures + compiles
-        // regexes but doesn't open sockets, spawn goroutines, or
-        // touch shared state. The WAF instance is dropped at the end
-        // of this call.
-        //
-        // Validates BOTH the top-level `directives` field and each
-        // per-application `applications.<name>.directives` field. Per-
-        // app directives are HAPTIC's primary path for per-Ingress
-        // modsecurity-snippet wiring.
-        //
-        // Routes through `PluginConfig::from_context` rather than
-        // walking the raw `PluginContext` so the schema understood
-        // here exactly matches what `init()` consumes — single source
-        // of truth, no parallel parser, no drift. The hub guarantees
-        // the context already satisfies `config_schema()` before
-        // calling `validate()` (haproxy-spoa-hub v0.5.2+
-        // `plugin_loader::collect_schema_errors`), so we only do
-        // semantic (Coraza-parser) checks here.
         let config = PluginConfig::from_context(context);
         let staged = staged_files_json(context);
         let mut diagnostics = validate_directives_string(&config.directives, &staged);

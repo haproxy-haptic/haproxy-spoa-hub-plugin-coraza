@@ -24,14 +24,22 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"sync"
 	"unsafe"
 
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/debuglog"
+	"github.com/corazawaf/coraza/v3/experimental"
 	"github.com/jcchavezs/mergefs"
 	osfs "github.com/jcchavezs/mergefs/io"
 )
+
+var validationCompileSlots = make(chan struct{}, 2)
+var previousValidationMu sync.Mutex
+
+// One generation keeps shared compiled expressions warm without retaining superseded rules.
+var previousValidationWAF experimental.WAFCloser
 
 // capturedDiagnostic mirrors plugin_api::Diagnostic on the wire.
 // Severity is "warning" or "error"; the column is always 0 because
@@ -149,6 +157,9 @@ func validateDirectives(directives, stagedFilesJSON string) []capturedDiagnostic
 // diagnostics as reported, before any severity promotion. Split out so a test
 // can assert the wording the promotion keys on.
 func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnostic {
+	validationCompileSlots <- struct{}{}
+	defer func() { <-validationCompileSlots }()
+
 	captured := make([]capturedDiagnostic, 0)
 	logger := &capturedLogger{diagnostics: &captured}
 
@@ -184,7 +195,8 @@ func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnos
 		WithRootFS(mergefs.Merge(filesystems...)).
 		WithDirectives(directives)
 
-	if _, err := coraza.NewWAF(cfg); err != nil {
+	waf, err := coraza.NewWAF(cfg)
+	if err != nil {
 		// Build a final error diagnostic carrying the wrapped error
 		// message. Use the line of the most recent captured entry as
 		// best-effort positioning — the parser logs the per-directive
@@ -198,6 +210,19 @@ func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnos
 			Line:     line,
 			Message:  err.Error(),
 		})
+	} else {
+		previousValidationMu.Lock()
+		previous := previousValidationWAF
+		previousValidationWAF = waf.(experimental.WAFCloser)
+		previousValidationMu.Unlock()
+		if previous != nil {
+			if err := previous.Close(); err != nil {
+				captured = append(captured, capturedDiagnostic{
+					Severity: "error",
+					Message:  "release validation resources: " + err.Error(),
+				})
+			}
+		}
 	}
 
 	return captured
