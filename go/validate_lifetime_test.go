@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -53,5 +54,34 @@ func TestValidationRetainsOnlyCurrentCompiledResources(t *testing.T) {
 				t.Fatalf("replacement did not release the last shared expression: %v", compilations)
 			}
 		})
+	}
+}
+
+type failingValidationCloser struct{}
+
+func (failingValidationCloser) Close() error { return errors.New("cleanup failed") }
+
+func TestPreviousCleanupFailureDoesNotRejectValidRules(t *testing.T) {
+	previousValidationMu.Lock()
+	previous := previousValidationWAF
+	previousValidationWAF = failingValidationCloser{}
+	previousValidationMu.Unlock()
+	t.Cleanup(func() {
+		previousValidationMu.Lock()
+		current := previousValidationWAF
+		previousValidationWAF = previous
+		previousValidationMu.Unlock()
+		if current != nil {
+			if err := current.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	diagnostics := validateDirectives(`SecRule ARGS "@rx safe" "id:1,phase:1,deny"`, "")
+	if len(diagnostics) != 1 || diagnostics[0].Severity != "warning" || diagnostics[0].Message != "release previous validation resources: cleanup failed" {
+		t.Fatalf("unexpected cleanup diagnostics: %+v", diagnostics)
+	}
+	if diagnostics := validateDirectives("NotARealDirective yes", ""); len(diagnostics) == 0 || diagnostics[len(diagnostics)-1].Severity != "error" {
+		t.Fatalf("invalid rules must still fail: %+v", diagnostics)
 	}
 }

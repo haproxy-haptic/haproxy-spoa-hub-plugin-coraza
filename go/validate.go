@@ -218,8 +218,8 @@ func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnos
 		if previous != nil {
 			if err := previous.Close(); err != nil {
 				captured = append(captured, capturedDiagnostic{
-					Severity: "error",
-					Message:  "release validation resources: " + err.Error(),
+					Severity: "warning",
+					Message:  "release previous validation resources: " + err.Error(),
 				})
 			}
 		}
