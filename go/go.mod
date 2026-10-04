@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/KimMachineGun/automemlimit v1.0.0
 	github.com/corazawaf/coraza-coreruleset/v4 v4.25.0
-	github.com/corazawaf/coraza/v3 v3.7.0
+	github.com/corazawaf/coraza/v3 v3.8.0
 	github.com/jcchavezs/mergefs v0.1.1
 	github.com/rs/zerolog v1.35.1
 )
@@ -36,4 +36,4 @@ require (
 )
 
 // Release failed WAF ownership; remove when an upstream release includes this fix.
-replace github.com/corazawaf/coraza/v3 => gitlab.com/haproxy-haptic/coraza/v3 v3.7.1-0.20261001204241-9bcc190ac0bf
+replace github.com/corazawaf/coraza/v3 => gitlab.com/haproxy-haptic/coraza/v3 v3.7.1-0.20261001221631-5ff6f4675f65
