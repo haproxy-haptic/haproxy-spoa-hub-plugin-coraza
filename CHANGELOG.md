@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Development and releases moved to GitHub (`https://github.com/haproxy-haptic/haproxy-spoa-hub-plugin-coraza`); GitLab is a read-only mirror.
+
 ### Fixed
 
 - Retain only the latest validation cache, release failed and superseded WAF resources, bound concurrent rule compilation, and reserve container memory for the native host.

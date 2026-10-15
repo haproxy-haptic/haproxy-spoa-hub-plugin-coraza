@@ -1,18 +1,14 @@
 # Release Process
 
 This project produces multi-arch plugin shared libraries on every version
-tag, uploaded to the GitLab Generic Package Registry alongside per-file
-`.sha256` sidecars and `.cosign.bundle` signatures.
+tag, published as a GitHub release alongside per-file `.sha256` sidecars,
+a combined `SHA256SUMS`, and `.cosign.bundle` signatures.
 
 All artifacts are published automatically by CI when you push a version tag.
 
 ## Prerequisites
 
 - Permission to push tags to the repository.
-- **Generic packages "Reject duplicates" enabled** under
-  Settings > Packages and Registries > Generic packages. Without this, a
-  re-run of the release pipeline on the same tag silently overwrites the
-  bytes uploaded earlier.
 
 ## Release process
 
@@ -23,17 +19,19 @@ All artifacts are published automatically by CI when you push a version tag.
 4. Tag: `git tag vx.y.z`
 5. Push: `git push origin vx.y.z`
 
-CI handles the rest:
+`.github/workflows/release.yml` handles the rest:
 
 - Cross-compiles for amd64, arm64, and armv7 with `cargo auditable`
   (binaries embed a compressed `Cargo.lock`-equivalent so SBOM tools can
   enumerate Rust deps without source access)
+- Cosign keyless-signs every `.so` using the GitHub Actions OIDC token,
+  producing `.cosign.bundle` files, and verifies each signature against the
+  release workflow identity
 - Generates per-file `.sha256` sidecars and a combined `SHA256SUMS`
-- Cosign keyless-signs every `.so` using the GitLab OIDC id token,
-  producing `.cosign.bundle` files
-- Uploads everything to the Generic Package Registry under
-  `packages/generic/coraza/<tag>/`
-- Creates a GitLab release with all artifacts linked as release assets
+- Creates a GitHub release with all artifacts attached
+
+To exercise build, signing, and verification without publishing, run the
+`release` workflow manually with `dry_run` enabled.
 
 ## Verifying a release
 
@@ -44,5 +42,6 @@ make verify-release VERSION=v0.1.1
 ```
 
 This downloads `SHA256SUMS`, every artifact named in it, and every artifact's
-cosign bundle from the package registry, then runs `sha256sum -c` and
-`cosign verify-blob` against the project's tag identity.
+cosign bundle from the GitHub release, then runs `sha256sum -c` and
+`cosign verify-blob` against the project's tag identity. Tags released
+before the move to GitHub verify against the GitLab CI identity.

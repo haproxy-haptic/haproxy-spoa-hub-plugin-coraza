@@ -13,5 +13,5 @@ COPY benches/ ./benches/
 RUN cargo build --release
 
 # Final image with hub + plugin
-FROM registry.gitlab.com/haproxy-haptic/haproxy-spoa-hub:latest
+FROM ghcr.io/haproxy-haptic/haproxy-spoa-hub:latest
 COPY --from=builder /build/target/release/libcoraza_plugin.so /etc/haproxy-spoa-hub/plugins/
