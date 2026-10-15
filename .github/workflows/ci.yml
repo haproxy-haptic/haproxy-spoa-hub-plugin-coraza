@@ -13,6 +13,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Containers run as root over a runner-owned checkout; without this, git refuses
+  # the repository and Go's VCS stamping fails the build.
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: safe.directory
+  GIT_CONFIG_VALUE_0: "*"
   # renovate: datasource=docker depName=golang
   GO_VERSION: "1.26.0"
   # renovate: datasource=github-releases depName=kubernetes-sigs/kind
