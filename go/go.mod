@@ -36,4 +36,4 @@ require (
 )
 
 // Release failed WAF ownership; remove when an upstream release includes this fix.
-replace github.com/corazawaf/coraza/v3 => gitlab.com/haproxy-haptic/coraza/v3 v3.7.1-0.20261001221631-5ff6f4675f65
+replace github.com/corazawaf/coraza/v3 => github.com/haproxy-haptic/coraza/v3 v3.7.1-0.20261001221631-5ff6f4675f65

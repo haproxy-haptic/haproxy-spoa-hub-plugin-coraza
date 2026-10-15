@@ -1,6 +1,6 @@
 # `validate()` Method Contract — Coraza Plugin Delta
 
-**Feature**: [../spec.md](../spec.md) | **Plugin-API contract**: [`haproxy-spoa-hub/specs/004-validate-mode/contracts/plugin-api-delta.md`](https://gitlab.com/haproxy-haptic/haproxy-spoa-hub/-/blob/main/specs/004-validate-mode/contracts/plugin-api-delta.md)
+**Feature**: [../spec.md](../spec.md) | **Plugin-API contract**: [`haproxy-spoa-hub/specs/004-validate-mode/contracts/plugin-api-delta.md`](https://github.com/haproxy-haptic/haproxy-spoa-hub/blob/main/specs/004-validate-mode/contracts/plugin-api-delta.md)
 
 This delta describes the Coraza-plugin-specific behaviour of the `SpoePlugin::validate()` method introduced by `haproxy-spoa-hub-plugin-api` v0.3. It does not redefine the trait (that's the upstream contract above); it only documents what diagnostics this plugin emits and how the per-field check is wired.
 

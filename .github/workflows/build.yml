@@ -1,0 +1,77 @@
+name: build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # Containers run as root over a runner-owned checkout; without this, git refuses
+  # the repository and Go's VCS stamping fails the build.
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: safe.directory
+  GIT_CONFIG_VALUE_0: "*"
+  # renovate: datasource=docker depName=golang
+  GO_VERSION: "1.26.0"
+  # renovate: datasource=crate depName=cargo-auditable
+  CARGO_AUDITABLE_VERSION: "0.7.4"
+  CARGO_INCREMENTAL: "0"
+  GLIBC_VERSION: "2.36"
+  LIB_NAME: libcoraza_plugin
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    # bookworm pins glibc 2.36, the floor the published .so targets.
+    container: rust:1.94-bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+            cross_pkg: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            cross_linker: aarch64-linux-gnu-gcc
+          - arch: armv7
+            target: armv7-unknown-linux-gnueabihf
+            cross_pkg: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+            cross_linker: arm-linux-gnueabihf-gcc
+    env:
+      ARCH: ${{ matrix.arch }}
+      RUST_TARGET: ${{ matrix.target }}
+      CROSS_PKG: ${{ matrix.cross_pkg }}
+      CROSS_LINKER: ${{ matrix.cross_linker }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Go
+        run: |
+          curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz
+          echo /usr/local/go/bin >> "${GITHUB_PATH}"
+      - name: Set up toolchain
+        run: |
+          cargo install --locked "cargo-auditable@${CARGO_AUDITABLE_VERSION}"
+          rustup target add "${RUST_TARGET}"
+          if [ -n "${CROSS_PKG}" ]; then
+            apt-get update -qq
+            # shellcheck disable=SC2086 # CROSS_PKG is a package list
+            apt-get install -y -qq ${CROSS_PKG} >/dev/null
+            mkdir -p .cargo
+            printf '[target.%s]\nlinker = "%s"\n' "${RUST_TARGET}" "${CROSS_LINKER}" > .cargo/config.toml
+          fi
+      - name: Build
+        run: |
+          cargo auditable build --release --target "${RUST_TARGET}"
+          mkdir -p artifacts
+          name="${LIB_NAME}-${ARCH}-glibc${GLIBC_VERSION}.so"
+          cp "target/${RUST_TARGET}/release/${LIB_NAME}.so" "artifacts/${name}"
+          (cd artifacts && sha256sum "${name}" > "${name}.sha256" && ls -lh "${name}" "${name}.sha256")
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-${{ matrix.arch }}
+          path: artifacts/
+          if-no-files-found: error
