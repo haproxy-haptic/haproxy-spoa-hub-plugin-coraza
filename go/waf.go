@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -29,6 +30,8 @@ var (
 	wafMu      sync.RWMutex
 	wafHandles = make(map[uint64]*wafInstance)
 	wafNextID  atomic.Uint64
+
+	rejectedWAFs = newRejectedBuilds[coraza.WAF]()
 )
 
 const (
@@ -87,7 +90,6 @@ func createWAF(
 	} else {
 		rootFS = mergefs.Merge(coreruleset.FS, osfs.OSFS)
 	}
-	config = config.WithRootFS(rootFS)
 
 	// Load directives
 	if directives != "" {
@@ -135,7 +137,11 @@ func createWAF(
 		event.Msg("WAF rule matched")
 	})
 
-	waf, err := coraza.NewWAF(config)
+	key := inputKey(directives, directivesFile, rootFSPath,
+		strconv.Itoa(reqBodyLimit), strconv.Itoa(reqBodyMemLimit), strconv.Itoa(respBodyLimit))
+	waf, err := rejectedWAFs.build(key, rootFS, func(root fs.FS) (coraza.WAF, error) {
+		return coraza.NewWAF(config.WithRootFS(root))
+	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to create WAF: %w", err)
 	}

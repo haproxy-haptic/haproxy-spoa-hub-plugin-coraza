@@ -63,6 +63,7 @@ jobs:
             mkdir -p .cargo
             printf '[target.%s]\nlinker = "%s"\n' "${RUST_TARGET}" "${CROSS_LINKER}" > .cargo/config.toml
           fi
+      - run: make no-replace
       - name: Build
         run: |
           cargo auditable build --release --target "${RUST_TARGET}"

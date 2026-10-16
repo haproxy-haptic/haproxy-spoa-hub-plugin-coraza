@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -37,6 +38,8 @@ import (
 
 var validationCompileSlots = make(chan struct{}, 2)
 var previousValidationMu sync.Mutex
+
+var rejectedValidations = newRejectedBuilds[[]capturedDiagnostic]()
 
 // One generation keeps shared compiled expressions warm without retaining superseded rules.
 var previousValidationWAF experimental.WAFCloser
@@ -192,36 +195,46 @@ func validateDirectivesRaw(directives, stagedFilesJSON string) []capturedDiagnos
 
 	cfg := coraza.NewWAFConfig().
 		WithDebugLogger(logger).
-		WithRootFS(mergefs.Merge(filesystems...)).
 		WithDirectives(directives)
 
-	waf, err := coraza.NewWAF(cfg)
-	if err != nil {
-		// Build a final error diagnostic carrying the wrapped error
-		// message. Use the line of the most recent captured entry as
-		// best-effort positioning — the parser logs the per-directive
-		// context just before NewWAF returns the wrapped error.
-		line := 0
-		if len(captured) > 0 {
-			line = captured[len(captured)-1].Line
-		}
-		captured = append(captured, capturedDiagnostic{
-			Severity: "error",
-			Line:     line,
-			Message:  err.Error(),
-		})
-	} else {
-		previousValidationMu.Lock()
-		previous := previousValidationWAF
-		previousValidationWAF = waf.(experimental.WAFCloser)
-		previousValidationMu.Unlock()
-		if previous != nil {
-			if err := previous.Close(); err != nil {
-				captured = append(captured, capturedDiagnostic{
-					Severity: "warning",
-					Message:  "release previous validation resources: " + err.Error(),
-				})
+	var waf coraza.WAF
+	rejected, err := rejectedValidations.build(
+		inputKey(directives, stagedFilesJSON),
+		mergefs.Merge(filesystems...),
+		func(root fs.FS) ([]capturedDiagnostic, error) {
+			var err error
+			waf, err = coraza.NewWAF(cfg.WithRootFS(root))
+			if err != nil {
+				// Use the line of the most recent captured entry as
+				// best-effort positioning — the parser logs the per-directive
+				// context just before NewWAF returns the wrapped error.
+				line := 0
+				if len(captured) > 0 {
+					line = captured[len(captured)-1].Line
+				}
+				return append(captured, capturedDiagnostic{
+					Severity: "error",
+					Line:     line,
+					Message:  err.Error(),
+				}), err
 			}
+			return nil, nil
+		},
+	)
+	if err != nil {
+		return slices.Clone(rejected)
+	}
+
+	previousValidationMu.Lock()
+	previous := previousValidationWAF
+	previousValidationWAF = waf.(experimental.WAFCloser)
+	previousValidationMu.Unlock()
+	if previous != nil {
+		if err := previous.Close(); err != nil {
+			captured = append(captured, capturedDiagnostic{
+				Severity: "warning",
+				Message:  "release previous validation resources: " + err.Error(),
+			})
 		}
 	}
 
