@@ -2,13 +2,21 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-16
+
+### Security
+
+- Built against upstream Coraza v3.8.1. v0.10.0 shipped Coraza v3.7.0, and the v3.8.1 bump on main was overridden by a `replace` onto a v3.7.0-based fork, so neither carried the v3.8.0/v3.8.1 fixes (GHSA-6gcq-wc29-5xf2 and GHSA-6r3q-mjv7-xr8m, both High; GHSA-5gj4-9gm7-2fx2, GHSA-g4qm-m288-5cp9, GHSA-w253-m66g-rx24, GHSA-3wr7-993q-jrff, GHSA-pc5q-qfxp-ggqv, GHSA-r3rm-qphw-hh76, GHSA-x26q-wvhg-fh4m, GHSA-3c6w-j9xm-8h2h, GHSA-rp9v-7xv3-r6g3, GHSA-prpw-wwv7-xjjr).
+- The build fails when `go/go.mod` contains a `replace` directive (`make no-replace`, run by `make lint` and every CI and release build).
+
 ### Changed
 
 - Development and releases moved to GitHub (`https://github.com/haproxy-haptic/haproxy-spoa-hub-plugin-coraza`); GitLab is a read-only mirror.
 
 ### Fixed
 
-- Retain only the latest validation cache, release failed and superseded WAF resources, bound concurrent rule compilation, and reserve container memory for the native host.
+- Retain only the latest validation cache, release superseded WAF resources, bound concurrent rule compilation, and reserve container memory for the native host.
+- A rule set Coraza rejects is not compiled again while its directives and every file it read are unchanged; the remembered rejection is returned instead. Coraza does not release a rejected WAF's compiled patterns, so each retry of the same invalid config (every validation of it, or a rule-file rewrite with unchanged content) leaked them.
 
 ## [0.10.0] - 2026-08-02
 
