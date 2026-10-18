@@ -21,7 +21,7 @@ env:
   # renovate: datasource=docker depName=golang
   GO_VERSION: "1.26.0"
   # renovate: datasource=github-releases depName=kubernetes-sigs/kind
-  KIND_VERSION: "v0.27.0"
+  KIND_VERSION: "v0.33.0"
   CARGO_INCREMENTAL: "0"
   GO_TAGS: coraza.rule.rx_prefilter,coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline
 
