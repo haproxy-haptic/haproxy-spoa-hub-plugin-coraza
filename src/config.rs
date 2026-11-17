@@ -161,17 +161,16 @@ impl PluginConfig {
     /// whose matches change as rule files come and go.
     pub fn rule_watch_globs(&self) -> Vec<String> {
         let mut globs: Vec<String> = Vec::new();
-        let blocks = std::iter::once(&self.directives)
-            .chain(self.applications.iter().map(|app| &app.directives));
-        for block in blocks {
-            collect_include_paths(block, &mut globs);
+        let default = self
+            .default_waf
+            .then_some((&self.directives, &self.directives_file));
+        let blocks = default
+            .into_iter()
+            .chain(self.applications.iter().map(|app| (&app.directives, &app.directives_file)));
+        for (directives, directives_file) in blocks {
+            collect_include_paths(directives, &mut globs);
+            globs.extend(directives_file.iter().cloned());
         }
-        globs.extend(
-            std::iter::once(&self.directives_file)
-                .chain(self.applications.iter().map(|app| &app.directives_file))
-                .flatten()
-                .cloned(),
-        );
         globs.sort();
         globs.dedup();
         globs

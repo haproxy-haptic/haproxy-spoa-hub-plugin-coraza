@@ -1598,6 +1598,38 @@ mod reload_tests {
     }
 
     #[test]
+    fn disabled_default_waf_files_are_not_watched() {
+        let dir = "/etc/haproxy/general";
+        let mut context = make_context_with_app(
+            &format!("Include {dir}/crs-*.conf\n"),
+            "shop",
+            &format!("Include {dir}/shop-*.conf\n"),
+        );
+        context
+            .config
+            .insert(RString::from("default_waf"), ConfigValue::Bool(false));
+        context.config.insert(
+            RString::from("directives_file"),
+            ConfigValue::String(format!("{dir}/default.conf").into()),
+        );
+        // An application inherits the default directives_file unless it names its own.
+        if let Some(ConfigValue::Table(apps)) = context.config.get_mut("applications") {
+            if let Some(ConfigValue::Table(shop)) = apps.get_mut("shop") {
+                shop.insert(
+                    RString::from("directives_file"),
+                    ConfigValue::String(format!("{dir}/shop.conf").into()),
+                );
+            }
+        }
+
+        assert_eq!(
+            PluginConfig::from_context(&context).rule_watch_globs(),
+            vec![format!("{dir}/shop-*.conf"), format!("{dir}/shop.conf")],
+            "a default WAF that is never compiled must not trigger rebuilds"
+        );
+    }
+
+    #[test]
     fn watching_is_off_when_no_include_names_a_file_on_disk() {
         let context = make_context("Include @coraza.conf-recommended\nSecRuleEngine On\n");
         assert!(
