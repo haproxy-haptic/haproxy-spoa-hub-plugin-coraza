@@ -21,6 +21,7 @@ fn test_default_config() {
     );
     assert_eq!(config.matched_data_max_bytes, 128);
     assert!(!config.expose_matched_data);
+    assert!(config.default_waf);
     assert!(config.directives.contains("SecRxPreFilter On"));
     assert!(
         config.directives.rfind("SecRuleEngine On")
@@ -86,7 +87,19 @@ fn test_config_schema_valid_json() {
     assert!(parsed["properties"]["response_check"].is_object());
     assert!(parsed["properties"]["transaction_ttl_ms"].is_object());
     assert!(parsed["properties"]["max_cached_transactions"].is_object());
+    assert_eq!(parsed["properties"]["default_waf"]["type"], "boolean");
     assert_eq!(parsed["additionalProperties"], false);
+}
+
+#[test]
+fn default_waf_can_be_disabled() {
+    let mut config = RHashMap::new();
+    config.insert(RString::from("default_waf"), ConfigValue::Bool(false));
+    let parsed = PluginConfig::from_context(&PluginContext {
+        name: RString::from("coraza"),
+        config,
+    });
+    assert!(!parsed.default_waf);
 }
 
 #[test]

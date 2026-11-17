@@ -73,6 +73,9 @@ pub struct PluginConfig {
     pub matched_data_max_bytes: i32,
     pub expose_matched_data: bool,
     pub rule_watch_interval_ms: i32,
+    /// False when every request names an application: the default WAF is
+    /// then not compiled, and a request without one is denied.
+    pub default_waf: bool,
     pub applications: Vec<AppConfig>,
 }
 
@@ -220,6 +223,7 @@ impl Default for PluginConfig {
             matched_data_max_bytes: 128,
             expose_matched_data: false,
             rule_watch_interval_ms: 15000,
+            default_waf: true,
             applications: Vec::new(),
         }
     }
@@ -281,14 +285,14 @@ fn parse_waf_fields(table: &RHashMap<RString, ConfigValue>, defaults: &WafFields
 impl PluginConfig {
     pub fn from_context(context: &PluginContext) -> Self {
         let defaults = Self::default();
-        let default_waf = WafFields {
+        let factory_waf = WafFields {
             directives: defaults.directives.clone(),
             directives_file: defaults.directives_file.clone(),
             request_body_limit: defaults.request_body_limit,
             request_body_in_memory_limit: defaults.request_body_in_memory_limit,
             response_body_limit: defaults.response_body_limit,
         };
-        let waf = parse_waf_fields(&context.config, &default_waf);
+        let waf = parse_waf_fields(&context.config, &factory_waf);
 
         let response_check = context
             .get_config("response_check")
@@ -350,6 +354,11 @@ impl PluginConfig {
             .and_then(|v| v.as_bool())
             .unwrap_or(defaults.expose_matched_data);
 
+        let default_waf = context
+            .get_config("default_waf")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(defaults.default_waf);
+
         let applications = context
             .get_config("applications")
             .and_then(|v| v.as_table())
@@ -391,6 +400,7 @@ impl PluginConfig {
             matched_data_max_bytes,
             expose_matched_data,
             rule_watch_interval_ms,
+            default_waf,
             applications,
         }
     }
@@ -484,6 +494,11 @@ impl PluginConfig {
                     "type": "boolean",
                     "default": false,
                     "description": "Expose bounded Coraza interruption data to HAProxy as the data variable. Disabled by default because it can contain request payloads."
+                },
+                "default_waf": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Compile the default WAF for requests that name no application. When false, such requests are denied with status 503 and no default WAF is compiled."
                 },
                 "applications": {
                     "type": "object",

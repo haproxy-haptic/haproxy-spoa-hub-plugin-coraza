@@ -36,7 +36,9 @@ impl Drop for WafHandle {
 /// each keeps its own name for selection, logs and metrics.
 #[derive(Debug)]
 struct WafGeneration {
-    default: Arc<WafHandle>,
+    /// None when `default_waf = false`: requests without an application are
+    /// denied rather than inspected by rules nobody configured for them.
+    default: Option<Arc<WafHandle>>,
     applications: HashMap<String, Arc<WafHandle>>,
 }
 
@@ -58,16 +60,25 @@ impl WafGeneration {
             Ok(handle)
         };
 
-        let default = compile_once("default WAF".into(), config.default_waf_key(), &|| {
-            create_waf(
-                &config.directives,
-                config.directives_file.as_deref(),
-                config.request_body_limit,
-                config.request_body_in_memory_limit,
-                config.response_body_limit,
-                config,
-            )
-        })?;
+        let default = if config.default_waf {
+            Some(compile_once(
+                "default WAF".into(),
+                config.default_waf_key(),
+                &|| {
+                    create_waf(
+                        &config.directives,
+                        config.directives_file.as_deref(),
+                        config.request_body_limit,
+                        config.request_body_in_memory_limit,
+                        config.response_body_limit,
+                        config,
+                    )
+                },
+            )?)
+        } else {
+            log::info!("Coraza default WAF disabled; requests without an application are denied");
+            None
+        };
 
         let mut applications = HashMap::with_capacity(config.applications.len());
         for app in &config.applications {
@@ -85,7 +96,7 @@ impl WafGeneration {
             applications.insert(app.name.clone(), handle);
         }
         log::info!(
-            "Coraza compiled {} distinct rule set(s) for the default WAF and {} application(s)",
+            "Coraza compiled {} distinct rule set(s) for {} application(s)",
             compiled.len(),
             config.applications.len()
         );
@@ -96,13 +107,15 @@ impl WafGeneration {
         })
     }
 
-    fn select<'a>(&self, application: Option<&'a str>) -> Result<(u64, &'a str), String> {
+    /// `Ok(None)` is a request without an application while the default WAF
+    /// is disabled.
+    fn select<'a>(&self, application: Option<&'a str>) -> Result<Option<(u64, &'a str)>, String> {
         match application.filter(|name| !name.is_empty()) {
-            None => Ok((self.default.0, "")),
+            None => Ok(self.default.as_ref().map(|handle| (handle.0, ""))),
             Some(name) => self
                 .applications
                 .get(name)
-                .map(|handle| (handle.0, name))
+                .map(|handle| Some((handle.0, name)))
                 .ok_or_else(|| format!("unknown Coraza application policy '{name}'")),
         }
     }
@@ -256,8 +269,12 @@ define_plugin!(CorazaPlugin, {
                     .generation
                     .as_ref()
                     .ok_or("Coraza plugin has not been initialized")?;
-                let (handle, selected_app) = generation.select(message.get_string("app"))?;
-                process_request(message, &state.config, handle, selected_app)
+                match generation.select(message.get_string("app"))? {
+                    Some((handle, selected_app)) => {
+                        process_request(message, &state.config, handle, selected_app)
+                    }
+                    None => Ok(deny_without_application()),
+                }
             }
             "check-response" => process_response(message, &state.config),
             _ => Ok(ProcessingResult::empty()),
@@ -289,7 +306,12 @@ define_plugin!(CorazaPlugin, {
             }
             diagnostics
         };
-        let mut diagnostics = validate_once(&config.directives);
+        // Validates exactly the rule sets init compiles.
+        let mut diagnostics = if config.default_waf {
+            validate_once(&config.directives)
+        } else {
+            Vec::new()
+        };
         for app in &config.applications {
             for mut d in validate_once(&app.directives) {
                 let mut prefixed = String::with_capacity(d.message.len() + app.name.len() + 16);
@@ -555,6 +577,32 @@ fn process_request(
     result.free_matched_var();
 
     Ok(ProcessingResult { variables })
+}
+
+/// A verdict, not an error: the host lets a request past on a plugin error
+/// unless it is configured to fail closed. 503 is the engine-error status.
+fn deny_without_application() -> ProcessingResult {
+    METRICS.counter(
+        "evaluations_total",
+        &[("phase", "request"), ("action", "deny"), ("app", "")],
+        1,
+    );
+    METRICS.counter(
+        "denials_total",
+        &[("phase", "request"), ("rule_id", "0"), ("app", "")],
+        1,
+    );
+    let mut variables = RVec::with_capacity(5);
+    for (name, value) in [
+        ("action", SpoeValue::String(RString::from("deny"))),
+        ("status", SpoeValue::Int32(503)),
+        ("rule_id", SpoeValue::Int32(0)),
+        ("anomaly_score", SpoeValue::Int32(0)),
+        ("rules_hit", SpoeValue::Int32(0)),
+    ] {
+        variables.push(TxnVariable::transaction(name, value));
+    }
+    ProcessingResult { variables }
 }
 
 /// Emit Prometheus metrics for one WAF evaluation. Called from both
@@ -1320,6 +1368,37 @@ mod validate_tests {
         );
     }
 
+    #[test]
+    fn disabled_default_waf_directives_are_not_validated() {
+        let plugin = CorazaPlugin::__new();
+        let mut app = RHashMap::new();
+        app.insert(
+            RString::from("directives"),
+            ConfigValue::String("SecBogusApp foo\n".into()),
+        );
+        let mut applications = RHashMap::new();
+        applications.insert(RString::from("app"), ConfigValue::Table(app));
+        let ctx = ctx_with(vec![
+            (
+                "directives",
+                ConfigValue::String("SecBogusDefault foo\n".into()),
+            ),
+            ("default_waf", ConfigValue::Bool(false)),
+            ("applications", ConfigValue::Table(applications)),
+        ]);
+
+        let messages: Vec<String> = plugin
+            .__validate(&ctx)
+            .iter()
+            .map(|d| d.message.as_str().to_string())
+            .collect();
+        assert!(!messages.is_empty(), "applications are still validated");
+        assert!(
+            messages.iter().all(|m| m.starts_with("application 'app':")),
+            "the default directives never compile, got {messages:?}"
+        );
+    }
+
     /// Null bytes cannot be represented on the C string boundary. Reject them
     /// explicitly instead of validating an empty substitute and then failing
     /// later during plugin initialization.
@@ -1573,7 +1652,7 @@ mod reload_tests {
             .read()
             .unwrap_or_else(|error| error.into_inner());
         let generation = state.generation.as_ref().expect("generation");
-        unsafe { ffi::coraza_waf_rules_count(generation.default.0) }
+        unsafe { ffi::coraza_waf_rules_count(generation.default.as_ref().expect("default WAF").0) }
     }
 
     fn wait_for_rules(plugin: &CorazaPlugin, want: i32) -> bool {
@@ -1932,6 +2011,49 @@ mod reload_tests {
 
         drop(plugin);
         assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+    }
+
+    #[test]
+    fn disabled_default_waf_is_not_compiled_and_denies_requests_without_an_application() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let rules = "SecRuleEngine On\n\
+                     SecRule REQUEST_URI \"@streq /a\" \"id:9401,phase:1,deny,status:403\"\n";
+        for apps in [vec![("app", rules, None)], vec![]] {
+            let mut context = make_context_with_apps(rules, &apps);
+            context
+                .config
+                .insert(RString::from("default_waf"), ConfigValue::Bool(false));
+            let mut plugin = CorazaPlugin::__new();
+            plugin.__init(&context).expect("init");
+            assert_eq!(
+                unsafe { ffi::coraza_waf_active_count() },
+                baseline + apps.len() as i32,
+                "only applications compile"
+            );
+
+            for request in [make_check_request("/b"), make_app_request("/b", "")] {
+                let result = plugin
+                    .__process(&request)
+                    .expect("a request without an application gets a verdict, not an error");
+                assert!(
+                    matches!(find_var(&result, "action"), SpoeValue::String(a) if a.as_str() == "deny")
+                );
+                assert!(matches!(find_var(&result, "status"), SpoeValue::Int32(503)));
+            }
+            if !apps.is_empty() {
+                let result = plugin
+                    .__process(&make_app_request("/a", "app"))
+                    .expect("app");
+                assert!(matches!(
+                    find_var(&result, "rule_id"),
+                    SpoeValue::Int32(9401)
+                ));
+            }
+
+            drop(plugin);
+            assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+        }
     }
 
     #[test]
