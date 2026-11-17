@@ -102,6 +102,7 @@ The plugin sets these variables in HAProxy (prefixed with `hub.<plugin_name>.`):
 | `rule_id` | int | Matched rule ID |
 | `anomaly_score` | int | CRS anomaly score |
 | `rules_hit` | int | Number of matched rules |
+| `rule_ids` | string | Comma-separated IDs of the matched rules that carry a severity (the anomaly score's rules), most severe first, at most 10; absent when none matched |
 | `data` | string | Bounded interruption data; absent unless `expose_matched_data=true` |
 
 ## Migration from coraza-spoa
