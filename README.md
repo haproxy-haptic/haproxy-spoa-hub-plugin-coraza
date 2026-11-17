@@ -71,6 +71,7 @@ request_body_in_memory_limit = 131072
 | `matched_data_max_bytes` | int | 128 | Bound for truncated logs and exposed matched data |
 | `expose_matched_data` | bool | false | Expose bounded interruption data as a transaction variable |
 | `rule_watch_interval_ms` | int | 15000 | How often to re-check the rule files named by `Include` directives, recompiling in place when they change; `0` disables |
+| `default_waf` | bool | true | Compile the default policy for requests without an `app`; when `false`, such requests get `action=deny`, `status=503` |
 | `applications` | table | empty | Named WAF policies; omitted fields inherit the effective top-level policy |
 
 Request-body access is controlled by SecLang, not by the numeric limit alone.
@@ -85,6 +86,8 @@ from whatever bytes happen to be present in HAProxy's request buffer.
 only after the default policy and every named policy compile successfully; a
 failed candidate leaves the serving generation untouched. Unknown application
 names are errors rather than silently falling back to the default policy.
+Applications with equal effective configuration share one compiled WAF:
+comments, blank lines and surrounding whitespace don't count.
 
 ### HAProxy SPOE Configuration
 

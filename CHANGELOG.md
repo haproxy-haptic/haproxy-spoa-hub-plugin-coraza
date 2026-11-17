@@ -5,10 +5,13 @@
 ### Added
 
 - The `rule_ids` variable names the matched rules that carry a severity, most severe first and at most 10 (for example `930130,920420`). In CRS's anomaly mode `rule_id` is the scoring rule 949110 for every request over the threshold, so `rule_ids` is what tells which rules put it there. Rule IDs only, no request content, so it can be logged like `matched_var`.
+- `default_waf = false` skips compiling and validating the default WAF when every request names an application. A request without one is then denied with status 503 instead of passing uninspected.
 
 ### Changed
 
 - The per-rule hit list handed to the hub on every evaluation is encoded without `encoding/json`, which takes about a fifth of the CPU for the ~60 rules a clean request matches with the default CRS. The payload is byte-identical.
+- Applications whose effective WAF configuration is equal now share one compiled WAF, as does the default WAF when it equals an application. Effective means the lines Coraza's parser evaluates: comments, blank lines and surrounding whitespace don't count, and `directives_file` and the body limits must match. Each application keeps its own name for selection, logs and metrics. Each extra compiled CRS rule set costs about 2.1 MiB of live Go heap, so N policies that differ only in a comment now cost one rule set instead of N + 1.
+- Validation compiles each set of effective directives once and reuses a clean result; directives that produce diagnostics are still validated per application, so every application's errors are reported with its own line numbers.
 
 ## [0.10.1] - 2026-10-16
 

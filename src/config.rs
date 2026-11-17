@@ -73,7 +73,74 @@ pub struct PluginConfig {
     pub matched_data_max_bytes: i32,
     pub expose_matched_data: bool,
     pub rule_watch_interval_ms: i32,
+    /// False when every request names an application: the default WAF is
+    /// then not compiled, and a request without one is denied.
+    pub default_waf: bool,
     pub applications: Vec<AppConfig>,
+}
+
+/// Everything a compiled WAF depends on, so a generation compiles each distinct
+/// key once and shares it between the applications that map to it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct WafKey {
+    directives: String,
+    directives_file: Option<String>,
+    request_body_limit: i32,
+    request_body_in_memory_limit: i32,
+    response_body_limit: i32,
+}
+
+impl AppConfig {
+    pub fn waf_key(&self) -> WafKey {
+        WafKey {
+            directives: effective_directives(&self.directives),
+            directives_file: self.directives_file.clone(),
+            request_body_limit: self.request_body_limit,
+            request_body_in_memory_limit: self.request_body_in_memory_limit,
+            response_body_limit: self.response_body_limit,
+        }
+    }
+}
+
+impl PluginConfig {
+    pub fn default_waf_key(&self) -> WafKey {
+        WafKey {
+            directives: effective_directives(&self.directives),
+            directives_file: self.directives_file.clone(),
+            request_body_limit: self.request_body_limit,
+            request_body_in_memory_limit: self.request_body_in_memory_limit,
+            response_body_limit: self.response_body_limit,
+        }
+    }
+}
+
+/// Coraza's line scanner gives up on a longer line and silently ignores the
+/// rest of the block (bufio.MaxScanTokenSize, unchecked in seclang/parser.go).
+const CORAZA_MAX_LINE_BYTES: usize = 64 * 1024;
+
+/// The lines Coraza's SecLang parser evaluates: it trims every line and skips
+/// blank and `#` lines everywhere, including inside continuations and
+/// backtick blocks (internal/seclang/parser.go `parseString`). Two blocks with
+/// equal results therefore compile to the same rules; only the line numbers in
+/// rule metadata differ.
+pub fn effective_directives(directives: &str) -> String {
+    // A line the scanner cannot read changes what is parsed, so it must keep
+    // the raw text distinct rather than be normalized away.
+    if directives
+        .split('\n')
+        .any(|line| line.len() + 1 >= CORAZA_MAX_LINE_BYTES)
+    {
+        return directives.to_string();
+    }
+    let mut effective = String::with_capacity(directives.len());
+    for line in directives.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        effective.push_str(line);
+        effective.push('\n');
+    }
+    effective
 }
 
 /// Marks an `Include` target that lives in the binary rather than on disk
@@ -94,17 +161,18 @@ impl PluginConfig {
     /// whose matches change as rule files come and go.
     pub fn rule_watch_globs(&self) -> Vec<String> {
         let mut globs: Vec<String> = Vec::new();
-        let blocks = std::iter::once(&self.directives)
-            .chain(self.applications.iter().map(|app| &app.directives));
-        for block in blocks {
-            collect_include_paths(block, &mut globs);
-        }
-        globs.extend(
-            std::iter::once(&self.directives_file)
-                .chain(self.applications.iter().map(|app| &app.directives_file))
-                .flatten()
-                .cloned(),
+        let default = self
+            .default_waf
+            .then_some((&self.directives, &self.directives_file));
+        let blocks = default.into_iter().chain(
+            self.applications
+                .iter()
+                .map(|app| (&app.directives, &app.directives_file)),
         );
+        for (directives, directives_file) in blocks {
+            collect_include_paths(directives, &mut globs);
+            globs.extend(directives_file.iter().cloned());
+        }
         globs.sort();
         globs.dedup();
         globs
@@ -156,6 +224,7 @@ impl Default for PluginConfig {
             matched_data_max_bytes: 128,
             expose_matched_data: false,
             rule_watch_interval_ms: 15000,
+            default_waf: true,
             applications: Vec::new(),
         }
     }
@@ -217,14 +286,14 @@ fn parse_waf_fields(table: &RHashMap<RString, ConfigValue>, defaults: &WafFields
 impl PluginConfig {
     pub fn from_context(context: &PluginContext) -> Self {
         let defaults = Self::default();
-        let default_waf = WafFields {
+        let factory_waf = WafFields {
             directives: defaults.directives.clone(),
             directives_file: defaults.directives_file.clone(),
             request_body_limit: defaults.request_body_limit,
             request_body_in_memory_limit: defaults.request_body_in_memory_limit,
             response_body_limit: defaults.response_body_limit,
         };
-        let waf = parse_waf_fields(&context.config, &default_waf);
+        let waf = parse_waf_fields(&context.config, &factory_waf);
 
         let response_check = context
             .get_config("response_check")
@@ -286,6 +355,11 @@ impl PluginConfig {
             .and_then(|v| v.as_bool())
             .unwrap_or(defaults.expose_matched_data);
 
+        let default_waf = context
+            .get_config("default_waf")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(defaults.default_waf);
+
         let applications = context
             .get_config("applications")
             .and_then(|v| v.as_table())
@@ -327,6 +401,7 @@ impl PluginConfig {
             matched_data_max_bytes,
             expose_matched_data,
             rule_watch_interval_ms,
+            default_waf,
             applications,
         }
     }
@@ -420,6 +495,11 @@ impl PluginConfig {
                     "type": "boolean",
                     "default": false,
                     "description": "Expose bounded Coraza interruption data to HAProxy as the data variable. Disabled by default because it can contain request payloads."
+                },
+                "default_waf": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Compile the default WAF for requests that name no application. When false, such requests are denied with status 503 and no default WAF is compiled."
                 },
                 "applications": {
                     "type": "object",

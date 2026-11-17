@@ -13,7 +13,7 @@ use haproxy_spoa_hub_plugin_api::{
     SpoeMessage, SpoeValue, TxnVariable, define_plugin,
 };
 
-use crate::config::PluginConfig;
+use crate::config::{PluginConfig, WafKey, effective_directives};
 use crate::ffi::{self, CorazaResult, to_cstring};
 use crate::watcher::{self, Fingerprint, RuleWatcher};
 
@@ -31,28 +31,58 @@ impl Drop for WafHandle {
 /// One completely compiled, immutable plugin generation. It is built off to
 /// the side and installed only after every application WAF succeeds, so failed
 /// hub reloads cannot mutate the generation still serving traffic.
+///
+/// Applications whose effective configuration is equal share one compiled WAF;
+/// each keeps its own name for selection, logs and metrics.
 #[derive(Debug)]
 struct WafGeneration {
-    default: WafHandle,
-    applications: HashMap<String, WafHandle>,
+    /// None when `default_waf = false`: requests without an application are
+    /// denied rather than inspected by rules nobody configured for them.
+    default: Option<Arc<WafHandle>>,
+    applications: HashMap<String, Arc<WafHandle>>,
 }
 
 impl WafGeneration {
     fn build(config: &PluginConfig) -> Result<Self, String> {
-        let default = WafHandle(create_waf(
-            &config.directives,
-            config.directives_file.as_deref(),
-            config.request_body_limit,
-            config.request_body_in_memory_limit,
-            config.response_body_limit,
-            config,
-        )?);
-        let rules_count = unsafe { ffi::coraza_waf_rules_count(default.0) };
-        log::info!("Coraza default WAF initialized with {rules_count} rules");
+        let mut compiled: HashMap<WafKey, (Arc<WafHandle>, String)> = HashMap::new();
+        let mut compile_once = |label: String,
+                                key: WafKey,
+                                build: &dyn Fn() -> Result<u64, String>|
+         -> Result<Arc<WafHandle>, String> {
+            if let Some((handle, owner)) = compiled.get(&key) {
+                log::info!("Coraza {label} shares the compiled rule set of {owner}");
+                return Ok(Arc::clone(handle));
+            }
+            let handle = Arc::new(WafHandle(build()?));
+            let rules_count = unsafe { ffi::coraza_waf_rules_count(handle.0) };
+            log::info!("Coraza {label} initialized with {rules_count} rules");
+            compiled.insert(key, (Arc::clone(&handle), label));
+            Ok(handle)
+        };
+
+        let default = if config.default_waf {
+            Some(compile_once(
+                "default WAF".into(),
+                config.default_waf_key(),
+                &|| {
+                    create_waf(
+                        &config.directives,
+                        config.directives_file.as_deref(),
+                        config.request_body_limit,
+                        config.request_body_in_memory_limit,
+                        config.response_body_limit,
+                        config,
+                    )
+                },
+            )?)
+        } else {
+            log::info!("Coraza default WAF disabled; requests without an application are denied");
+            None
+        };
 
         let mut applications = HashMap::with_capacity(config.applications.len());
         for app in &config.applications {
-            let handle = WafHandle(
+            let handle = compile_once(format!("WAF app '{}'", app.name), app.waf_key(), &|| {
                 create_waf(
                     &app.directives,
                     app.directives_file.as_deref(),
@@ -61,15 +91,15 @@ impl WafGeneration {
                     app.response_body_limit,
                     config,
                 )
-                .map_err(|error| format!("application '{}': {error}", app.name))?,
-            );
-            let app_rules = unsafe { ffi::coraza_waf_rules_count(handle.0) };
-            log::info!(
-                "Coraza WAF app '{}' initialized with {app_rules} rules",
-                app.name
-            );
+                .map_err(|error| format!("application '{}': {error}", app.name))
+            })?;
             applications.insert(app.name.clone(), handle);
         }
+        log::info!(
+            "Coraza compiled {} distinct rule set(s) for {} application(s)",
+            compiled.len(),
+            config.applications.len()
+        );
 
         Ok(Self {
             default,
@@ -77,13 +107,15 @@ impl WafGeneration {
         })
     }
 
-    fn select<'a>(&self, application: Option<&'a str>) -> Result<(u64, &'a str), String> {
+    /// `Ok(None)` is a request without an application while the default WAF
+    /// is disabled.
+    fn select<'a>(&self, application: Option<&'a str>) -> Result<Option<(u64, &'a str)>, String> {
         match application.filter(|name| !name.is_empty()) {
-            None => Ok((self.default.0, "")),
+            None => Ok(self.default.as_ref().map(|handle| (handle.0, ""))),
             Some(name) => self
                 .applications
                 .get(name)
-                .map(|handle| (handle.0, name))
+                .map(|handle| Some((handle.0, name)))
                 .ok_or_else(|| format!("unknown Coraza application policy '{name}'")),
         }
     }
@@ -237,8 +269,12 @@ define_plugin!(CorazaPlugin, {
                     .generation
                     .as_ref()
                     .ok_or("Coraza plugin has not been initialized")?;
-                let (handle, selected_app) = generation.select(message.get_string("app"))?;
-                process_request(message, &state.config, handle, selected_app)
+                match generation.select(message.get_string("app"))? {
+                    Some((handle, selected_app)) => {
+                        process_request(message, &state.config, handle, selected_app)
+                    }
+                    None => Ok(deny_without_application()),
+                }
             }
             "check-response" => process_response(message, &state.config),
             _ => Ok(ProcessingResult::empty()),
@@ -256,9 +292,28 @@ define_plugin!(CorazaPlugin, {
         }
         let config = PluginConfig::from_context(context);
         let staged = CString::new(staged_files_json(context)).expect("JSON escapes null bytes");
-        let mut diagnostics = validate_directives_string(&config.directives, &staged);
+        // Only a clean result is reused: diagnostics carry line numbers, which
+        // differ between blocks with equal effective directives.
+        let mut clean = std::collections::HashSet::new();
+        let mut validate_once = |directives: &str| {
+            let effective = effective_directives(directives);
+            if clean.contains(&effective) {
+                return Vec::new();
+            }
+            let diagnostics = validate_directives_string(directives, &staged);
+            if diagnostics.is_empty() {
+                clean.insert(effective);
+            }
+            diagnostics
+        };
+        // Validates exactly the rule sets init compiles.
+        let mut diagnostics = if config.default_waf {
+            validate_once(&config.directives)
+        } else {
+            Vec::new()
+        };
         for app in &config.applications {
-            for mut d in validate_directives_string(&app.directives, &staged) {
+            for mut d in validate_once(&app.directives) {
                 let mut prefixed = String::with_capacity(d.message.len() + app.name.len() + 16);
                 prefixed.push_str("application '");
                 prefixed.push_str(&app.name);
@@ -522,6 +577,32 @@ fn process_request(
     result.free_matched_var();
 
     Ok(ProcessingResult { variables })
+}
+
+/// A verdict, not an error: the host lets a request past on a plugin error
+/// unless it is configured to fail closed. 503 is the engine-error status.
+fn deny_without_application() -> ProcessingResult {
+    METRICS.counter(
+        "evaluations_total",
+        &[("phase", "request"), ("action", "deny"), ("app", "")],
+        1,
+    );
+    METRICS.counter(
+        "denials_total",
+        &[("phase", "request"), ("rule_id", "0"), ("app", "")],
+        1,
+    );
+    let mut variables = RVec::with_capacity(5);
+    for (name, value) in [
+        ("action", SpoeValue::String(RString::from("deny"))),
+        ("status", SpoeValue::Int32(503)),
+        ("rule_id", SpoeValue::Int32(0)),
+        ("anomaly_score", SpoeValue::Int32(0)),
+        ("rules_hit", SpoeValue::Int32(0)),
+    ] {
+        variables.push(TxnVariable::transaction(name, value));
+    }
+    ProcessingResult { variables }
 }
 
 /// Emit Prometheus metrics for one WAF evaluation. Called from both
@@ -1248,6 +1329,76 @@ mod validate_tests {
         );
     }
 
+    #[test]
+    fn equal_effective_directives_still_report_each_applications_errors() {
+        let plugin = CorazaPlugin::__new();
+        let mut applications = RHashMap::new();
+        for (name, directives) in [
+            ("alpha", "# policy:alpha\nSecBogusShared foo\n"),
+            ("bravo", "# policy:bravo\n\nSecBogusShared foo\n"),
+            ("clean", "# policy:clean\nSecRuleEngine On\n"),
+            ("clean-copy", "# policy:clean-copy\nSecRuleEngine On\n"),
+        ] {
+            let mut app = RHashMap::new();
+            app.insert(
+                RString::from("directives"),
+                ConfigValue::String(directives.into()),
+            );
+            applications.insert(RString::from(name), ConfigValue::Table(app));
+        }
+        let ctx = ctx_with(vec![("applications", ConfigValue::Table(applications))]);
+
+        let messages: Vec<String> = plugin
+            .__validate(&ctx)
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .map(|d| d.message.as_str().to_string())
+            .collect();
+        for name in ["alpha", "bravo"] {
+            assert!(
+                messages
+                    .iter()
+                    .any(|m| m.contains(&format!("application '{name}':"))),
+                "{name} must be reported, got {messages:?}"
+            );
+        }
+        assert!(
+            !messages.iter().any(|m| m.contains("clean")),
+            "clean applications must not be reported, got {messages:?}"
+        );
+    }
+
+    #[test]
+    fn disabled_default_waf_directives_are_not_validated() {
+        let plugin = CorazaPlugin::__new();
+        let mut app = RHashMap::new();
+        app.insert(
+            RString::from("directives"),
+            ConfigValue::String("SecBogusApp foo\n".into()),
+        );
+        let mut applications = RHashMap::new();
+        applications.insert(RString::from("app"), ConfigValue::Table(app));
+        let ctx = ctx_with(vec![
+            (
+                "directives",
+                ConfigValue::String("SecBogusDefault foo\n".into()),
+            ),
+            ("default_waf", ConfigValue::Bool(false)),
+            ("applications", ConfigValue::Table(applications)),
+        ]);
+
+        let messages: Vec<String> = plugin
+            .__validate(&ctx)
+            .iter()
+            .map(|d| d.message.as_str().to_string())
+            .collect();
+        assert!(!messages.is_empty(), "applications are still validated");
+        assert!(
+            messages.iter().all(|m| m.starts_with("application 'app':")),
+            "the default directives never compile, got {messages:?}"
+        );
+    }
+
     /// Null bytes cannot be represented on the C string boundary. Reject them
     /// explicitly instead of validating an empty substitute and then failing
     /// later during plugin initialization.
@@ -1447,6 +1598,38 @@ mod reload_tests {
     }
 
     #[test]
+    fn disabled_default_waf_files_are_not_watched() {
+        let dir = "/etc/haproxy/general";
+        let mut context = make_context_with_app(
+            &format!("Include {dir}/crs-*.conf\n"),
+            "shop",
+            &format!("Include {dir}/shop-*.conf\n"),
+        );
+        context
+            .config
+            .insert(RString::from("default_waf"), ConfigValue::Bool(false));
+        context.config.insert(
+            RString::from("directives_file"),
+            ConfigValue::String(format!("{dir}/default.conf").into()),
+        );
+        // An application inherits the default directives_file unless it names its own.
+        if let Some(ConfigValue::Table(apps)) = context.config.get_mut("applications") {
+            if let Some(ConfigValue::Table(shop)) = apps.get_mut("shop") {
+                shop.insert(
+                    RString::from("directives_file"),
+                    ConfigValue::String(format!("{dir}/shop.conf").into()),
+                );
+            }
+        }
+
+        assert_eq!(
+            PluginConfig::from_context(&context).rule_watch_globs(),
+            vec![format!("{dir}/shop-*.conf"), format!("{dir}/shop.conf")],
+            "a default WAF that is never compiled must not trigger rebuilds"
+        );
+    }
+
+    #[test]
     fn watching_is_off_when_no_include_names_a_file_on_disk() {
         let context = make_context("Include @coraza.conf-recommended\nSecRuleEngine On\n");
         assert!(
@@ -1501,7 +1684,7 @@ mod reload_tests {
             .read()
             .unwrap_or_else(|error| error.into_inner());
         let generation = state.generation.as_ref().expect("generation");
-        unsafe { ffi::coraza_waf_rules_count(generation.default.0) }
+        unsafe { ffi::coraza_waf_rules_count(generation.default.as_ref().expect("default WAF").0) }
     }
 
     fn wait_for_rules(plugin: &CorazaPlugin, want: i32) -> bool {
@@ -1559,6 +1742,33 @@ mod reload_tests {
             name: RString::from("coraza"),
             config,
         }
+    }
+
+    fn make_context_with_apps(
+        default_directives: &str,
+        apps: &[(&str, &str, Option<i64>)],
+    ) -> PluginContext {
+        let mut applications = RHashMap::new();
+        for (name, directives, request_body_limit) in apps {
+            let mut app = RHashMap::new();
+            app.insert(
+                RString::from("directives"),
+                ConfigValue::String((*directives).into()),
+            );
+            if let Some(limit) = request_body_limit {
+                app.insert(
+                    RString::from("request_body_limit"),
+                    ConfigValue::Integer(*limit),
+                );
+            }
+            applications.insert(RString::from(*name), ConfigValue::Table(app));
+        }
+        let mut context = make_context(default_directives);
+        context.config.insert(
+            RString::from("applications"),
+            ConfigValue::Table(applications),
+        );
+        context
     }
 
     fn make_check_request(path: &str) -> SpoeMessage {
@@ -1773,7 +1983,7 @@ mod reload_tests {
                 .__init(&make_context_with_app(
                     "SecRuleEngine On\n",
                     "app",
-                    "SecRuleEngine On\n",
+                    "SecRuleEngine DetectionOnly\n",
                 ))
                 .unwrap_or_else(|error| panic!("generation {generation} failed: {error}"));
             assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline + 2);
@@ -1783,6 +1993,98 @@ mod reload_tests {
                 baseline,
                 "generation {generation} leaked WAF handles"
             );
+        }
+    }
+
+    #[test]
+    fn applications_with_equal_effective_configuration_share_one_waf() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let base = "SecRuleEngine On\n\
+                    SecRule REQUEST_URI \"@streq /a\" \"id:9301,phase:1,deny,status:403\"\n\
+                    SecRule REQUEST_URI \"@streq /b\" \"id:9302,phase:1,deny,status:403\"\n";
+        let excluded = format!("{base}SecRuleRemoveById 9301\n");
+        let context = make_context_with_apps(
+            base,
+            &[
+                ("same-as-default", &format!("{base}\n# policy:same\n"), None),
+                ("excluded", &format!("{excluded}# policy:excluded\n"), None),
+                (
+                    "excluded-copy",
+                    &format!("  {excluded}\n# policy:copy\n"),
+                    None,
+                ),
+                ("larger-body", &excluded, Some(65_536)),
+            ],
+        );
+        let mut plugin = CorazaPlugin::__new();
+        plugin.__init(&context).expect("init");
+        assert_eq!(
+            unsafe { ffi::coraza_waf_active_count() },
+            baseline + 3,
+            "default+same-as-default, excluded+excluded-copy and larger-body compile once each"
+        );
+
+        let rule = |path: &str, app: &str| {
+            let result = plugin
+                .__process(&make_app_request(path, app))
+                .unwrap_or_else(|error| panic!("{app} {path}: {error}"));
+            match find_var(&result, "rule_id") {
+                SpoeValue::Int32(id) => *id,
+                other => panic!("rule_id should be Int32, got {other:?}"),
+            }
+        };
+        assert_eq!(rule("/a", ""), 9301);
+        assert_eq!(rule("/a", "same-as-default"), 9301);
+        for app in ["excluded", "excluded-copy", "larger-body"] {
+            assert_eq!(rule("/a", app), 0, "{app} removed rule 9301");
+            assert_eq!(rule("/b", app), 9302, "{app} keeps rule 9302");
+        }
+
+        drop(plugin);
+        assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+    }
+
+    #[test]
+    fn disabled_default_waf_is_not_compiled_and_denies_requests_without_an_application() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let rules = "SecRuleEngine On\n\
+                     SecRule REQUEST_URI \"@streq /a\" \"id:9401,phase:1,deny,status:403\"\n";
+        for apps in [vec![("app", rules, None)], vec![]] {
+            let mut context = make_context_with_apps(rules, &apps);
+            context
+                .config
+                .insert(RString::from("default_waf"), ConfigValue::Bool(false));
+            let mut plugin = CorazaPlugin::__new();
+            plugin.__init(&context).expect("init");
+            assert_eq!(
+                unsafe { ffi::coraza_waf_active_count() },
+                baseline + apps.len() as i32,
+                "only applications compile"
+            );
+
+            for request in [make_check_request("/b"), make_app_request("/b", "")] {
+                let result = plugin
+                    .__process(&request)
+                    .expect("a request without an application gets a verdict, not an error");
+                assert!(
+                    matches!(find_var(&result, "action"), SpoeValue::String(a) if a.as_str() == "deny")
+                );
+                assert!(matches!(find_var(&result, "status"), SpoeValue::Int32(503)));
+            }
+            if !apps.is_empty() {
+                let result = plugin
+                    .__process(&make_app_request("/a", "app"))
+                    .expect("app");
+                assert!(matches!(
+                    find_var(&result, "rule_id"),
+                    SpoeValue::Int32(9401)
+                ));
+            }
+
+            drop(plugin);
+            assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
         }
     }
 
