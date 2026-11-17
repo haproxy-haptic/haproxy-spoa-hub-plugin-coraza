@@ -1,4 +1,4 @@
-.PHONY: build build-release test test-go fmt lint no-replace check test-e2e verify-release
+.PHONY: build build-release test test-go fuzz-go bench-go bench-ffi fmt lint no-replace check test-e2e verify-release
 
 GO_TAGS := coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline
 
@@ -10,6 +10,26 @@ build-release:
 
 test-go:
 	cd go && go test -race -tags "$(GO_TAGS)" ./...
+
+# Fuzz the hand-written matched-rule encoder against encoding/json.
+FUZZTIME ?= 30s
+fuzz-go:
+	cd go && go test -tags "$(GO_TAGS)" -run '^$$' -fuzz '^FuzzAppendMatchedRulesJSON$$' -fuzztime $(FUZZTIME) .
+
+# Evaluation cost against Coraza alone with the chart-default CRS (HAPTIC#697).
+# AB_ROUNDS > 0 also runs the interleaved latency comparison.
+AB_ROUNDS ?= 0
+BENCH ?= ^BenchmarkEvaluation
+BENCH_FLAGS ?= -benchtime=3s -count=1
+bench-go:
+	cd go && CORAZA_AB_ROUNDS=$(AB_ROUNDS) go test -tags "$(GO_TAGS)" -run '^TestEvaluationLatencyAB$$' -bench '$(BENCH)' $(BENCH_FLAGS) .
+
+# The same evaluation called from a Rust thread across cgo, as the hub calls it.
+# FFI_PACE_US > 0 sleeps before each call to model low request rates.
+FFI_ROUNDS ?= 2000
+FFI_PACE_US ?= 0
+bench-ffi:
+	CORAZA_FFI_ROUNDS=$(FFI_ROUNDS) CORAZA_FFI_PACE=$(FFI_PACE_US) cargo bench --bench evaluation_ffi
 
 test: build test-go
 	cargo test

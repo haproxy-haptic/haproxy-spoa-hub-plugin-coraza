@@ -5,10 +5,10 @@ package main
 */
 import "C"
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unsafe"
@@ -46,36 +46,44 @@ type headerPair struct {
 // are skipped; nil is returned when nothing remains so the common
 // no-hit path allocates nothing.
 func matchedRulesJSON(matchedRules []types.MatchedRule) *C.char {
-	encoded := matchedRulesJSONString(matchedRules)
-	if encoded == "" {
+	if len(matchedRules) == 0 {
 		return nil
 	}
-	return C.CString(encoded)
+	encoded := appendMatchedRulesJSON(make([]byte, 0, 24*len(matchedRules)+3), matchedRules)
+	if len(encoded) == 0 {
+		return nil
+	}
+	return (*C.char)(C.CBytes(append(encoded, 0)))
 }
 
-// matchedRulesJSONString is the pure (cgo-free) body of matchedRulesJSON,
-// split out because test files cannot import "C". Severity is passed
-// through raw: Coraza reports -1 for rules that declare none (e.g. CRS
-// reporting rules); the consumer maps out-of-range values to "none".
-func matchedRulesJSONString(matchedRules []types.MatchedRule) string {
-	type hit struct {
-		I int `json:"i"`
-		S int `json:"s"`
-	}
-	hits := make([]hit, 0, len(matchedRules))
+// appendMatchedRulesJSON is the cgo-free body of matchedRulesJSON, split out
+// because test files cannot import "C". Hand-encoded: it runs on every
+// evaluation, and encoding/json took about 5x the CPU for CRS's ~60 baseline hits.
+// Severity is passed through raw: Coraza reports -1 for rules that declare
+// none (e.g. CRS reporting rules); the consumer maps those to "none".
+func appendMatchedRulesJSON(dst []byte, matchedRules []types.MatchedRule) []byte {
+	start := len(dst)
 	for _, mr := range matchedRules {
-		if id := mr.Rule().ID(); id > 0 {
-			hits = append(hits, hit{I: id, S: int(mr.Rule().Severity())})
+		rule := mr.Rule()
+		id := rule.ID()
+		if id <= 0 {
+			continue
 		}
+		if len(dst) == start {
+			dst = append(dst, '[')
+		} else {
+			dst = append(dst, ',')
+		}
+		dst = append(dst, `{"i":`...)
+		dst = strconv.AppendInt(dst, int64(id), 10)
+		dst = append(dst, `,"s":`...)
+		dst = strconv.AppendInt(dst, int64(rule.Severity()), 10)
+		dst = append(dst, '}')
 	}
-	if len(hits) == 0 {
-		return ""
+	if len(dst) == start {
+		return dst
 	}
-	encoded, err := json.Marshal(hits)
-	if err != nil {
-		return ""
-	}
-	return string(encoded)
+	return append(dst, ']')
 }
 
 // buildResult creates a coraza_result_t from a transaction's state.

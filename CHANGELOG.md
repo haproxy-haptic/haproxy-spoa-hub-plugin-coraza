@@ -6,6 +6,10 @@
 
 - The `rule_ids` variable names the matched rules that carry a severity, most severe first and at most 10 (for example `930130,920420`). In CRS's anomaly mode `rule_id` is the scoring rule 949110 for every request over the threshold, so `rule_ids` is what tells which rules put it there. Rule IDs only, no request content, so it can be logged like `matched_var`.
 
+### Changed
+
+- The per-rule hit list handed to the hub on every evaluation is encoded without `encoding/json`, which takes about a fifth of the CPU for the ~60 rules a clean request matches with the default CRS. The payload is byte-identical.
+
 ## [0.10.1] - 2026-10-16
 
 ### Security
