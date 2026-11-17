@@ -248,7 +248,7 @@ func TestMatchedRulesJSON(t *testing.T) {
 	tx.ProcessRequestHeaders()
 	tx.ProcessRequestBody()
 
-	raw := matchedRulesJSONString(tx.MatchedRules())
+	raw := string(appendMatchedRulesJSON(nil, tx.MatchedRules()))
 	if raw == "" {
 		t.Fatal("expected matched_rules JSON for a SQLi transaction, got empty")
 	}
@@ -283,7 +283,7 @@ func TestMatchedRulesJSON(t *testing.T) {
 }
 
 func TestMatchedRulesJSON_NoHitsIsEmpty(t *testing.T) {
-	if got := matchedRulesJSONString(nil); got != "" {
+	if got := string(appendMatchedRulesJSON(nil, nil)); got != "" {
 		t.Errorf("expected empty string for no matched rules, got %q", got)
 	}
 }
