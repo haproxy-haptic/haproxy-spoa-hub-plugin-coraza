@@ -1,4 +1,4 @@
-.PHONY: build build-release test test-go bench-go bench-ffi fmt lint no-replace check test-e2e verify-release
+.PHONY: build build-release test test-go fuzz-go bench-go bench-ffi fmt lint no-replace check test-e2e verify-release
 
 GO_TAGS := coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline
 
@@ -10,6 +10,11 @@ build-release:
 
 test-go:
 	cd go && go test -race -tags "$(GO_TAGS)" ./...
+
+# Fuzz the hand-written matched-rule encoder against encoding/json.
+FUZZTIME ?= 30s
+fuzz-go:
+	cd go && go test -tags "$(GO_TAGS)" -run '^$$' -fuzz '^FuzzAppendMatchedRulesJSON$$' -fuzztime $(FUZZTIME) .
 
 # Evaluation cost against Coraza alone with the chart-default CRS (HAPTIC#697).
 # AB_ROUNDS > 0 also runs the interleaved latency comparison.
