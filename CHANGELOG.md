@@ -9,6 +9,8 @@
 ### Changed
 
 - The per-rule hit list handed to the hub on every evaluation is encoded without `encoding/json`, which takes about a fifth of the CPU for the ~60 rules a clean request matches with the default CRS. The payload is byte-identical.
+- Applications whose effective WAF configuration is equal now share one compiled WAF, as does the default WAF when it equals an application. Effective means the lines Coraza's parser evaluates: comments, blank lines and surrounding whitespace don't count, and `directives_file` and the body limits must match. Each application keeps its own name for selection, logs and metrics. Each extra compiled rule set costs about 2.1 MiB of heap, so N policies that differ only in a comment now cost one rule set instead of N + 1.
+- Validation compiles each set of effective directives once and reuses a clean result; directives that produce diagnostics are still validated per application, so every application's errors are reported with its own line numbers.
 
 ## [0.10.1] - 2026-10-16
 

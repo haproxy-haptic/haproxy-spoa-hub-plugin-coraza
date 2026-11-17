@@ -88,3 +88,34 @@ fn test_config_schema_valid_json() {
     assert!(parsed["properties"]["max_cached_transactions"].is_object());
     assert_eq!(parsed["additionalProperties"], false);
 }
+
+#[test]
+fn effective_directives_drop_what_corazas_parser_skips() {
+    use coraza_plugin::config::effective_directives;
+    let a = "Include @owasp_crs/*.conf\n\n# policy:a\nSecRuleRemoveById 942100\n";
+    let b = "  Include @owasp_crs/*.conf  \r\n# policy:b\n\t# indented comment\nSecRuleRemoveById 942100";
+    assert_eq!(effective_directives(a), effective_directives(b));
+    assert_ne!(
+        effective_directives(a),
+        effective_directives("Include @owasp_crs/*.conf\nSecRuleRemoveById 942101\n"),
+        "a different exclusion is a different rule set"
+    );
+    assert_ne!(
+        effective_directives("SecAction \"id:1,pass,msg:'a#b'\"\n"),
+        effective_directives("SecAction \"id:1,pass,msg:'a'\"\n"),
+        "`#` only starts a comment at the beginning of a line"
+    );
+}
+
+#[test]
+fn effective_directives_keep_a_line_corazas_scanner_cannot_read() {
+    use coraza_plugin::config::effective_directives;
+    let long_comment = format!("# {}\n", "x".repeat(70 * 1024));
+    let with = format!("SecRuleEngine On\n{long_comment}SecRuleRemoveById 1\n");
+    let without = "SecRuleEngine On\nSecRuleRemoveById 1\n";
+    assert_ne!(
+        effective_directives(&with),
+        effective_directives(without),
+        "Coraza stops parsing at an over-long line, so the two blocks compile differently"
+    );
+}

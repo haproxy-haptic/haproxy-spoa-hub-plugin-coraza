@@ -76,6 +76,70 @@ pub struct PluginConfig {
     pub applications: Vec<AppConfig>,
 }
 
+/// Everything a compiled WAF depends on, so a generation compiles each distinct
+/// key once and shares it between the applications that map to it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct WafKey {
+    directives: String,
+    directives_file: Option<String>,
+    request_body_limit: i32,
+    request_body_in_memory_limit: i32,
+    response_body_limit: i32,
+}
+
+impl AppConfig {
+    pub fn waf_key(&self) -> WafKey {
+        WafKey {
+            directives: effective_directives(&self.directives),
+            directives_file: self.directives_file.clone(),
+            request_body_limit: self.request_body_limit,
+            request_body_in_memory_limit: self.request_body_in_memory_limit,
+            response_body_limit: self.response_body_limit,
+        }
+    }
+}
+
+impl PluginConfig {
+    pub fn default_waf_key(&self) -> WafKey {
+        WafKey {
+            directives: effective_directives(&self.directives),
+            directives_file: self.directives_file.clone(),
+            request_body_limit: self.request_body_limit,
+            request_body_in_memory_limit: self.request_body_in_memory_limit,
+            response_body_limit: self.response_body_limit,
+        }
+    }
+}
+
+/// Coraza's line scanner gives up on a longer line and silently ignores the
+/// rest of the block (bufio.MaxScanTokenSize, unchecked in seclang/parser.go).
+const CORAZA_MAX_LINE_BYTES: usize = 64 * 1024;
+
+/// The lines Coraza's SecLang parser evaluates: it trims every line and skips
+/// blank and `#` lines everywhere, including inside continuations and
+/// backtick blocks (internal/seclang/parser.go `parseString`). Two blocks with
+/// equal results therefore compile to the same rules; only the line numbers in
+/// rule metadata differ.
+pub fn effective_directives(directives: &str) -> String {
+    // A line the scanner cannot read changes what is parsed, so it must keep
+    // the raw text distinct rather than be normalized away.
+    if directives
+        .split('\n')
+        .any(|line| line.len() + 1 >= CORAZA_MAX_LINE_BYTES)
+    {
+        return directives.to_string();
+    }
+    let mut effective = String::with_capacity(directives.len());
+    for line in directives.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        effective.push_str(line);
+        effective.push('\n');
+    }
+    effective
+}
+
 /// Marks an `Include` target that lives in the binary rather than on disk
 /// (`@coraza.conf-recommended`, `@owasp_crs/*.conf`). Those cannot change
 /// without a new image, so watching them would be pure cost.
