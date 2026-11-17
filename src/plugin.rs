@@ -626,6 +626,37 @@ fn severity_label(severity: i64) -> &'static str {
     }
 }
 
+/// Most rule IDs `rule_ids` names on one request.
+const MAX_RULE_IDS: usize = 10;
+
+/// The IDs of the matched rules that carry a severity (emergency to notice:
+/// the rules that make up the anomaly score), most severe first, then by ID,
+/// each once and at most `MAX_RULE_IDS`, comma-separated. In CRS's anomaly
+/// mode `rule_id` is the scoring rule (949110) for every would-block request;
+/// these are the rules behind it. Setup and reporting rules (no severity) are
+/// left out. Empty when no such rule matched or the payload does not decode.
+fn scoring_rule_ids(matched_rules: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct RuleHit {
+        i: i64,
+        s: i64,
+    }
+    if matched_rules.is_empty() {
+        return String::new();
+    }
+    let Ok(mut hits) = serde_json::from_str::<Vec<RuleHit>>(matched_rules) else {
+        return String::new();
+    };
+    hits.retain(|h| (0..=5).contains(&h.s) && h.i > 0);
+    hits.sort_by_key(|h| (h.s, h.i));
+    hits.dedup_by_key(|h| h.i);
+    hits.iter()
+        .take(MAX_RULE_IDS)
+        .map(|h| h.i.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn process_response(
     message: &SpoeMessage,
     config: &PluginConfig,
@@ -722,6 +753,16 @@ fn result_to_variables(
             "rules_hit",
             SpoeValue::Int32(result.rules_hit),
         ));
+
+        // The scoring rules behind the verdict, e.g. "930130,920420": rule
+        // IDs only, so like `matched_var` it carries no request content.
+        let rule_ids = scoring_rule_ids(result.matched_rules_str());
+        if !rule_ids.is_empty() {
+            vars.push(TxnVariable::transaction(
+                "rule_ids",
+                SpoeValue::String(RString::from(rule_ids)),
+            ));
+        }
 
         // The NAME of the field a rule matched on (e.g. ARGS:q), never its
         // value — so unlike `data` below this needs no expose_matched_data gate.
@@ -856,6 +897,36 @@ fn extract_bytes_as_headers(value: Option<&SpoeValue>) -> Vec<u8> {
         Some(SpoeValue::Binary(b)) => parse_haproxy_headers(b.as_slice()),
         Some(SpoeValue::String(s)) => parse_haproxy_headers(s.as_bytes()),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod rule_ids_tests {
+    use super::*;
+
+    #[test]
+    fn names_the_scoring_rules_most_severe_first() {
+        // 901100 (setup, no severity) and 949110 (scoring, no severity in CRS 4) stay out
+        let raw = r#"[{"i":901100,"s":-1},{"i":920420,"s":2},{"i":930130,"s":2},{"i":920350,"s":4},{"i":949110,"s":-1}]"#;
+        assert_eq!(scoring_rule_ids(raw), "920420,930130,920350");
+    }
+
+    #[test]
+    fn names_each_rule_once_and_at_most_ten() {
+        let mut hits: Vec<String> = (0..15)
+            .map(|n| format!(r#"{{"i":{},"s":2}}"#, 942100 + n))
+            .collect();
+        hits.push(r#"{"i":942100,"s":2}"#.to_string());
+        let ids = scoring_rule_ids(&format!("[{}]", hits.join(",")));
+        assert_eq!(ids.split(',').count(), MAX_RULE_IDS);
+        assert!(ids.starts_with("942100,942101,"));
+    }
+
+    #[test]
+    fn is_empty_without_a_scoring_rule_or_with_a_damaged_payload() {
+        assert_eq!(scoring_rule_ids(""), "");
+        assert_eq!(scoring_rule_ids(r#"[{"i":901100,"s":-1}]"#), "");
+        assert_eq!(scoring_rule_ids("not json"), "");
     }
 }
 
