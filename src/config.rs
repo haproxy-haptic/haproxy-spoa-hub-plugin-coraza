@@ -164,9 +164,11 @@ impl PluginConfig {
         let default = self
             .default_waf
             .then_some((&self.directives, &self.directives_file));
-        let blocks = default
-            .into_iter()
-            .chain(self.applications.iter().map(|app| (&app.directives, &app.directives_file)));
+        let blocks = default.into_iter().chain(
+            self.applications
+                .iter()
+                .map(|app| (&app.directives, &app.directives_file)),
+        );
         for (directives, directives_file) in blocks {
             collect_include_paths(directives, &mut globs);
             globs.extend(directives_file.iter().cloned());
