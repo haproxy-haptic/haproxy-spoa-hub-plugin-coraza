@@ -108,6 +108,12 @@ impl RuleCatalog {
         }
     }
 
+    pub(super) fn configure_reporting(&self, tx: &mut Transaction) {
+        tx.set_source_qualified_argument_names(true);
+        tx.record_matched_fields(MAX_MATCHED_FIELDS, request_field);
+        tx.set_record_rule_messages(self.log_matches);
+    }
+
     pub(super) fn result(&self, tx: &Transaction, expose_data: bool, limit: i32) -> Evaluation {
         let mut result = Evaluation::allow();
         let matched = tx.matched_rules();
@@ -214,10 +220,6 @@ impl RuleCatalog {
 
 const MAX_MATCHED_FIELDS: usize = 5;
 
-pub(super) fn record_request_fields(tx: &mut Transaction) {
-    tx.record_matched_fields(MAX_MATCHED_FIELDS, request_field);
-}
-
 fn request_field(name: &str) -> Option<&str> {
     const INPUTS: &[&str] = &[
         "ARGS",
@@ -281,7 +283,7 @@ SecRule ARGS:category "@streq books" "id:2,phase:1,deny,status:418,severity:CRIT
         .unwrap();
         let catalog = RuleCatalog::new(&engine, &PluginConfig::default());
         let mut tx = engine.new_transaction();
-        record_request_fields(&mut tx);
+        catalog.configure_reporting(&mut tx);
         tx.process_uri("/?category=books", "GET", "HTTP/1.1")
             .unwrap();
         tx.process_request_headers().unwrap();
@@ -292,7 +294,10 @@ SecRule ARGS:category "@streq books" "id:2,phase:1,deny,status:418,severity:CRIT
         );
         assert_eq!(result.anomaly_score, 7);
         assert_eq!(result.matched_rules, r#"[{"i":1,"s":5},{"i":2,"s":2}]"#);
-        assert_eq!(result.matched_var, "ARGS:category,ARGS_NAMES:category");
+        assert_eq!(
+            result.matched_var,
+            "ARGS_GET:category,ARGS_GET_NAMES:category"
+        );
         assert!(result.data.is_empty());
         result.allow_through();
         assert!(!result.denied());
@@ -316,7 +321,7 @@ SecRule ARGS:b|ARGS:c "@streq green" "t:none"
         .unwrap();
         let catalog = RuleCatalog::new(&engine, &PluginConfig::default());
         let mut tx = engine.new_transaction();
-        record_request_fields(&mut tx);
+        catalog.configure_reporting(&mut tx);
         tx.process_uri(
             "/?fallback=green&extra=green&other=green&a=green&b=green&c=green",
             "GET",
@@ -328,7 +333,7 @@ SecRule ARGS:b|ARGS:c "@streq green" "t:none"
         assert_eq!((result.status, result.rule_id), (403, 4));
         assert_eq!(
             result.matched_var,
-            "ARGS:a,ARGS:b,ARGS:c,ARGS:other,ARGS:fallback"
+            "ARGS_GET:a,ARGS_GET:b,ARGS_GET:c,ARGS_GET:other,ARGS_GET:fallback"
         );
     }
 
@@ -341,7 +346,7 @@ SecRule REQUEST_METHOD "@streq GET" "id:3,phase:1,redirect:/target,status:307""#
         .unwrap();
         let catalog = RuleCatalog::new(&engine, &PluginConfig::default());
         let mut tx = engine.new_transaction();
-        record_request_fields(&mut tx);
+        catalog.configure_reporting(&mut tx);
         tx.process_uri("/", "GET", "HTTP/1.1").unwrap();
         tx.process_request_headers().unwrap();
         let result = catalog.result(&tx, true, 4);
