@@ -247,6 +247,17 @@ impl RuleFiles {
             .map_err(|e| config_error(format!("opening embedded CRS: {e}")))
     }
 
+    /// Both Includes and rule data operands can address the embedded namespace.
+    fn embedded_base(&self, operand: &Path) -> zentinel_modsec::Result<Option<&Path>> {
+        if !operand.to_string_lossy().starts_with('@') {
+            return Ok(None);
+        }
+        if operand.components().any(|c| c == Component::ParentDir) {
+            return Err(config_error("invalid embedded resource path"));
+        }
+        self.embedded_root().map(Some)
+    }
+
     fn logical_message(&self, message: &str) -> String {
         let mut message = message.to_string();
         if let Some(root) = &self.staged {
@@ -315,11 +326,8 @@ impl ParserHost for RuleFiles {
     ) -> zentinel_modsec::Result<Vec<PathBuf>> {
         let base = self.base(file);
         let mut matches = Vec::new();
-        if operand.to_string_lossy().starts_with('@') {
-            if operand.components().any(|c| c == Component::ParentDir) {
-                return Err(config_error("invalid embedded Include path"));
-            }
-            matches = file_matches(self.embedded_root()?, operand)?;
+        if let Some(embedded) = self.embedded_base(operand)? {
+            matches = file_matches(embedded, operand)?;
         } else {
             let logical = base.join(operand);
             let mut shadowed = HashSet::new();
@@ -345,15 +353,18 @@ impl ParserHost for RuleFiles {
         Ok(matches)
     }
 
-    fn data_file(&self, file: Option<&Path>, operand: &Path) -> PathBuf {
+    fn data_file(&self, file: Option<&Path>, operand: &Path) -> zentinel_modsec::Result<PathBuf> {
+        if let Some(embedded) = self.embedded_base(operand)? {
+            return Ok(embedded.join(operand));
+        }
         let path = self.base(file).join(operand);
         if let Some(staged) = &self.staged {
             let candidate = staged.path().join(unroot(&path));
             if candidate.is_file() {
-                return candidate;
+                return Ok(candidate);
             }
         }
-        path
+        Ok(path)
     }
 
     fn unknown_directive(
@@ -443,6 +454,15 @@ mod tests {
         let diag = &validate_directives("Include /staged/policy.conf", &staged.to_string())[0];
         assert_eq!(diag.line, 2);
         assert!(diag.message.contains("/staged/policy.conf:2:1"));
+    }
+
+    #[test]
+    fn phrase_lists_can_address_the_bundle_without_an_include() {
+        let input =
+            r#"SecRule ARGS "@pmFromFile @owasp_crs/restricted-files.data" "id:1,phase:1,deny""#;
+        assert!(validate_directives(input, "").is_empty());
+        let missing = input.replace("restricted-files.data", "missing.data");
+        assert!(!validate_directives(&missing, "").is_empty());
     }
 
     #[test]
