@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compare all SPOA variables for benign policies with tagged Go Coraza."""
 import argparse
+from contextlib import ExitStack
 from dataclasses import dataclass
 import hashlib
 import json
@@ -9,7 +10,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from compare import FORM, GET, POLICY, digest, hub, inspect_backends, probes, request, response
+from compare import FORM, GET, POLICY, HubStartupError, digest, hub, inspect_backends, probes, request, response
 
 
 FORM_MEDIA = 'application/x-www-form-urlencoded'
@@ -174,8 +175,14 @@ def without_id(result):
 
 def run(binary, plugin, root, cpus, policies):
     results = {}
+    startup_errors = {}
     for index, item in enumerate(policies):
-        with hub(binary, plugin, root / str(index), cpus, True, item.directives) as (_, client):
+        with ExitStack() as stack:
+            try:
+                _, client = stack.enter_context(hub(binary, plugin, root / str(index), cpus, True, item.directives))
+            except HubStartupError as error:
+                startup_errors[item.name] = str(error)
+                continue
             if not item.requests:
                 results[item.name] = probes(client, True)
                 continue
@@ -191,12 +198,14 @@ def run(binary, plugin, root, cpus, policies):
                         raise ValueError(f'{item.name}/{label}: invalid response ACK: {reply}')
                     result[label + '-response'] = without_id(reply)
             results[item.name] = result
-    return results
+    return results, startup_errors
 
 
 def differences(go, rust):
     changed = {}
     for policy, requests in go.items():
+        if policy not in rust:
+            continue
         for name, reference in requests.items():
             actual = rust[policy][name]
             fields = {k: {'go': reference.get(k), 'rust': actual.get(k)}
@@ -216,6 +225,7 @@ def main():
     binaries = {name: getattr(args, name).resolve(strict=True) for name in ('hub', 'go', 'rust')}
     policies = fixtures()
     receipt = {
+        'startup_errors': {},
         'hub_version': subprocess.check_output([binaries['hub'], '--version'], text=True).strip(),
         'binary_sha256': {k: digest(v) for k, v in binaries.items()},
         'artifacts': inspect_backends({k: binaries[k] for k in ('go', 'rust')}),
@@ -225,17 +235,22 @@ def main():
         for side in ('go', 'rust'):
             root = Path(tmp) / side
             root.mkdir()
-            receipt[side] = run(binaries['hub'], binaries[side], root, sorted(os.sched_getaffinity(0))[:2], policies)
+            receipt[side], receipt['startup_errors'][side] = run(
+                binaries['hub'], binaries[side], root, sorted(os.sched_getaffinity(0))[:2], policies)
     changed = differences(receipt['go'], receipt['rust'])
     receipt['differences'] = changed
-    receipt['checked_acks'] = sum(len(requests) for requests in receipt['go'].values())
+    receipt['checked_acks'] = sum(len(acks) for policy, acks in receipt['go'].items() if policy in receipt['rust'])
     with args.output.open('x') as out:
         json.dump(receipt, out, indent=2)
         out.write('\n')
-    print(f"{receipt['checked_acks']} ACKs, {len(changed)} differences")
+    failures = sum(len(items) for items in receipt['startup_errors'].values())
+    print(f"{receipt['checked_acks']} ACKs compared, {len(changed)} differences, {failures} hub startup errors")
+    for side, errors in receipt['startup_errors'].items():
+        for policy, error in errors.items():
+            print(f'{side}/{policy}: {error}')
     for label, fields in changed.items():
         print(label, json.dumps(fields))
-    return int(bool(changed))
+    return int(bool(changed or failures))
 
 
 if __name__ == '__main__':

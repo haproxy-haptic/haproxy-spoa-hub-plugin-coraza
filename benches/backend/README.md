@@ -42,4 +42,4 @@ python3 benches/backend/policy_parity.py \
     --rust target/bench-plugins/libcoraza_rust_plugin.so --output policy-parity.json
 ```
 
-A difference in any returned SPOA field fails the comparison. Each response uses the transaction ID returned by its own backend. IDs are generated independently and are excluded from the field comparison. The JSON records binary and policy hashes, both sets of returned fields, and any differences.
+A policy that fails to start the hub or a difference in any returned SPOA field fails the comparison. Each response uses the transaction ID returned by its own backend. IDs are generated independently and are excluded from the field comparison. The JSON records binary and policy hashes, both sets of returned fields, and any differences.

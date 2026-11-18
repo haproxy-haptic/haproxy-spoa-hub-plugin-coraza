@@ -87,6 +87,10 @@ def probes(client, responses):
     return decisions
 
 
+class HubStartupError(RuntimeError):
+    pass
+
+
 @contextmanager
 def hub(binary, plugin, directory, cpus, responses, policy=POLICY):
     directory.mkdir()
@@ -118,7 +122,7 @@ rule_watch_interval_ms = 0
         deadline = time.monotonic() + 60
         while True:
             if process.poll() is not None:
-                raise RuntimeError(f'hub exited ({process.returncode}): {log.read_text()[-4000:]}')
+                raise HubStartupError(f'hub exited ({process.returncode}): {log.read_text()[-4000:]}')
             try:
                 client = Client(address)
             except (FileNotFoundError, ConnectionRefusedError):
