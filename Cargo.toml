@@ -9,7 +9,18 @@ license = "Apache-2.0"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["go-backend"]
+go-backend = []
+rust-backend = ["dep:zentinel-modsec", "dep:tempfile", "dep:tar", "dep:flate2", "dep:sha2"]
+
 [dependencies]
+zentinel-modsec = { git = "https://github.com/phihos/zentinel-modsec", rev = "2b503049a21d7630db62a109b896d1b790163c21", default-features = false, optional = true }
+tempfile = { version = "3", optional = true }
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1", optional = true }
+sha2 = { version = "0.10", optional = true }
+
 # Requires plugin-api 0.6.0+ for the v2 vtable that carries
 # set_metric_recorder. Plugin loads on v0.5.x hubs too — the v2
 # vtable field is appended after v1, so v0.5.x hubs read only what
@@ -29,6 +40,7 @@ criterion = { version = "0.8", features = ["html_reports"] }
 [[bench]]
 name = "waf_bench"
 harness = false
+required-features = ["go-backend"]
 
 [profile.release]
 lto = true
@@ -37,3 +49,8 @@ codegen-units = 1
 [[bench]]
 name = "evaluation_ffi"
 harness = false
+required-features = ["go-backend"]
+
+[[test]]
+name = "ffi_test"
+required-features = ["go-backend"]

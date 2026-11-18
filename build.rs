@@ -3,6 +3,10 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    if env::var_os("CARGO_FEATURE_GO_BACKEND").is_none() {
+        println!("cargo:rerun-if-changed=build.rs");
+        return;
+    }
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let go_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("go");
     let archive_path = out_dir.join("libcoraza.a");

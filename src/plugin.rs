@@ -1,4 +1,3 @@
-use std::ffi::{CStr, CString, c_char, c_int};
 use std::{
     collections::HashMap,
     sync::{
@@ -9,24 +8,15 @@ use std::{
 };
 
 use haproxy_spoa_hub_plugin_api::{
-    ConfigValue, Diagnostic, MetricRecorder, PluginContext, ProcessingResult, RString, RVec,
-    SpoeMessage, SpoeValue, TxnVariable, define_plugin,
+    ConfigValue, MetricRecorder, PluginContext, ProcessingResult, RString, RVec, SpoeMessage,
+    SpoeValue, TxnVariable, define_plugin,
 };
 
+use crate::backend::{self, Evaluation, Request, Response, TransactionCache, Waf, create_waf};
 use crate::config::{PluginConfig, WafKey, effective_directives};
-use crate::ffi::{self, CorazaResult, to_cstring};
 use crate::watcher::{self, Fingerprint, RuleWatcher};
 
 static TX_SEQUENCE: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Debug)]
-struct WafHandle(u64);
-
-impl Drop for WafHandle {
-    fn drop(&mut self) {
-        unsafe { ffi::coraza_waf_free(self.0) };
-    }
-}
 
 /// One completely compiled, immutable plugin generation. It is built off to
 /// the side and installed only after every application WAF succeeds, so failed
@@ -38,23 +28,23 @@ impl Drop for WafHandle {
 struct WafGeneration {
     /// None when `default_waf = false`: requests without an application are
     /// denied rather than inspected by rules nobody configured for them.
-    default: Option<Arc<WafHandle>>,
-    applications: HashMap<String, Arc<WafHandle>>,
+    default: Option<Arc<Waf>>,
+    applications: HashMap<String, Arc<Waf>>,
 }
 
 impl WafGeneration {
     fn build(config: &PluginConfig) -> Result<Self, String> {
-        let mut compiled: HashMap<WafKey, (Arc<WafHandle>, String)> = HashMap::new();
+        let mut compiled: HashMap<WafKey, (Arc<Waf>, String)> = HashMap::new();
         let mut compile_once = |label: String,
                                 key: WafKey,
-                                build: &dyn Fn() -> Result<u64, String>|
-         -> Result<Arc<WafHandle>, String> {
+                                build: &dyn Fn() -> Result<Waf, String>|
+         -> Result<Arc<Waf>, String> {
             if let Some((handle, owner)) = compiled.get(&key) {
                 log::info!("Coraza {label} shares the compiled rule set of {owner}");
                 return Ok(Arc::clone(handle));
             }
-            let handle = Arc::new(WafHandle(build()?));
-            let rules_count = unsafe { ffi::coraza_waf_rules_count(handle.0) };
+            let handle = Arc::new(build()?);
+            let rules_count = handle.rule_count();
             log::info!("Coraza {label} initialized with {rules_count} rules");
             compiled.insert(key, (Arc::clone(&handle), label));
             Ok(handle)
@@ -109,13 +99,13 @@ impl WafGeneration {
 
     /// `Ok(None)` is a request without an application while the default WAF
     /// is disabled.
-    fn select<'a>(&self, application: Option<&'a str>) -> Result<Option<(u64, &'a str)>, String> {
+    fn select<'a>(&self, application: Option<&'a str>) -> Result<Option<(&Waf, &'a str)>, String> {
         match application.filter(|name| !name.is_empty()) {
-            None => Ok(self.default.as_ref().map(|handle| (handle.0, ""))),
+            None => Ok(self.default.as_ref().map(|handle| (handle.as_ref(), ""))),
             Some(name) => self
                 .applications
                 .get(name)
-                .map(|handle| Some((handle.0, name)))
+                .map(|handle| Some((handle.as_ref(), name)))
                 .ok_or_else(|| format!("unknown Coraza application policy '{name}'")),
         }
     }
@@ -140,6 +130,7 @@ struct CorazaPlugin {
     // against this same state. An Arc rather than a borrow so the state cannot
     // be freed while that thread is between its stop check and its next use.
     state: Arc<RwLock<State>>,
+    cache: TransactionCache,
     // Replaced on every init; dropping the previous handle stops and joins its
     // thread, so a reconfigure never leaves two watchers rebuilding one plugin.
     watcher: Mutex<Option<RuleWatcher>>,
@@ -217,6 +208,7 @@ define_plugin!(CorazaPlugin, {
     fn new() -> Self {
         CorazaPlugin {
             state: Arc::new(RwLock::new(State::default())),
+            cache: TransactionCache::default(),
             watcher: Mutex::new(None),
         }
     }
@@ -271,12 +263,12 @@ define_plugin!(CorazaPlugin, {
                     .ok_or("Coraza plugin has not been initialized")?;
                 match generation.select(message.get_string("app"))? {
                     Some((handle, selected_app)) => {
-                        process_request(message, &state.config, handle, selected_app)
+                        process_request(message, &state.config, handle, selected_app, &self.cache)
                     }
                     None => Ok(deny_without_application()),
                 }
             }
-            "check-response" => process_response(message, &state.config),
+            "check-response" => process_response(message, &state.config, &self.cache),
             _ => Ok(ProcessingResult::empty()),
         }
     }
@@ -286,12 +278,12 @@ define_plugin!(CorazaPlugin, {
     }
 
     fn validate(&self, context: &PluginContext) -> Vec<Diagnostic> {
+        #[cfg(feature = "go-backend")]
         if is_validation_only(context) {
-            // SAFETY: no pointers cross this call; Go serializes budget initialization.
-            unsafe { ffi::coraza_configure_validation_memory() };
+            backend::configure_validation_memory();
         }
         let config = PluginConfig::from_context(context);
-        let staged = CString::new(staged_files_json(context)).expect("JSON escapes null bytes");
+        let staged = staged_files_json(context);
         // Only a clean result is reused: diagnostics carry line numbers, which
         // differ between blocks with equal effective directives.
         let mut clean = std::collections::HashSet::new();
@@ -300,7 +292,7 @@ define_plugin!(CorazaPlugin, {
             if clean.contains(&effective) {
                 return Vec::new();
             }
-            let diagnostics = validate_directives_string(directives, &staged);
+            let diagnostics = backend::validate_directives(directives, &staged);
             if diagnostics.is_empty() {
                 clean.insert(effective);
             }
@@ -330,6 +322,7 @@ define_plugin!(CorazaPlugin, {
 });
 
 // Set only by the dedicated validator; runtime load/reload validation must not retune Go.
+#[cfg(any(test, feature = "go-backend"))]
 fn is_validation_only(context: &PluginContext) -> bool {
     matches!(
         context.config.get(&RString::from("__validation_only")),
@@ -365,91 +358,9 @@ fn staged_files_json(context: &PluginContext) -> String {
     serde_json::to_string(&map).expect("string map serializes as JSON")
 }
 
-/// Compile a SecLang directives string via Coraza, return any
-/// captured warnings/errors as `plugin_api::Diagnostic` values.
-fn validate_directives_string(directives: &str, staged_files_json: &CStr) -> Vec<Diagnostic> {
-    if directives.is_empty() {
-        return Vec::new();
-    }
-    if directives.as_bytes().contains(&0) {
-        return vec![Diagnostic::error(
-            0,
-            0,
-            "directives contain an interior null byte; refusing an ambiguous FFI string",
-        )];
-    }
-    let dir_c = to_cstring(directives);
-    let dir_len = match c_int::try_from(dir_c.as_bytes().len()) {
-        Ok(n) => n,
-        // SecLang directive strings exceeding i32::MAX are not
-        // realistic; surface a synthetic error rather than silently
-        // truncating the length on the FFI boundary.
-        Err(_) => {
-            return vec![Diagnostic::error(
-                0,
-                0,
-                "directives string exceeds i32::MAX bytes; refusing to validate",
-            )];
-        }
-    };
-
-    let json_ptr = unsafe {
-        ffi::coraza_validate_directives(dir_c.as_ptr(), dir_len, staged_files_json.as_ptr())
-    };
-    if json_ptr.is_null() {
-        return Vec::new();
-    }
-    let json_str = unsafe { CStr::from_ptr(json_ptr) }
-        .to_string_lossy()
-        .into_owned();
-    unsafe { ffi::coraza_free_string(json_ptr as *mut c_char) };
-
-    parse_validation_json(&json_str)
-}
-
-/// Deserialise the JSON returned by `coraza_validate_directives` into
-/// `Vec<Diagnostic>`. The wire form is `[{"severity","line","message"},...]`.
-fn parse_validation_json(json: &str) -> Vec<Diagnostic> {
-    #[derive(serde::Deserialize)]
-    struct CapturedDiagnostic {
-        severity: String,
-        line: u32,
-        message: String,
-    }
-    let captured: Vec<CapturedDiagnostic> = match serde_json::from_str(json) {
-        Ok(v) => v,
-        Err(error) => {
-            return vec![Diagnostic::error(
-                0,
-                0,
-                format!("Coraza validator returned malformed diagnostics: {error}"),
-            )];
-        }
-    };
-    captured
-        .into_iter()
-        .map(|c| match c.severity.as_str() {
-            "error" => Diagnostic::error(c.line, 0, c.message),
-            _ => Diagnostic::warning(c.line, 0, c.message),
-        })
-        .collect()
-}
-
 impl Drop for CorazaPlugin {
     fn drop(&mut self) {
-        // Log final metrics before the plugin instance goes away.
-        // Counters are process-global on the Go side, so the values
-        // include traffic from any concurrently-live instances during
-        // a hub reload window — fine for an operator-facing summary.
-        //
-        // Instance fields are dropped immediately after this method. Each WAF
-        // handle is then retired on the Go side; handles with cached response
-        // transactions remain leased until those transactions finish or
-        // expire.
-        let allowed = unsafe { ffi::coraza_metrics_allowed() };
-        let blocked = unsafe { ffi::coraza_metrics_blocked() };
-        let rules_hit = unsafe { ffi::coraza_metrics_rules_hit() };
-        let errors = unsafe { ffi::coraza_metrics_errors() };
+        let (allowed, blocked, rules_hit, errors) = self.cache.summary();
         log::info!(
             "Coraza plugin shutting down: allowed={allowed}, blocked={blocked}, \
              rules_hit={rules_hit}, errors={errors}"
@@ -460,8 +371,9 @@ impl Drop for CorazaPlugin {
 fn process_request(
     message: &SpoeMessage,
     config: &PluginConfig,
-    waf_handle: u64,
+    waf: &Waf,
     selected_app: &str,
+    cache: &TransactionCache,
 ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
     let src_ip = message.get_string("src-ip").unwrap_or("");
     let src_port = message.get_int("src-port").unwrap_or(0) as i32;
@@ -504,23 +416,6 @@ fn process_request(
     let sequence = TX_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let tx_id = format!("{sequence}-{}-{}", message.stream_id, message.frame_id);
 
-    // Convert to C strings
-    let tx_id_c = checked_cstring("transaction ID", &tx_id)?;
-    let src_ip_c = checked_cstring("source IP", src_ip)?;
-    let dst_ip_c = checked_cstring("destination IP", dst_ip)?;
-    let method_c = checked_cstring("method", method)?;
-    let path_c = checked_cstring("path", path)?;
-    let query_c = checked_cstring("query", query)?;
-    let version_c = checked_cstring("HTTP version", version)?;
-    let headers_len = checked_ffi_len("headers", headers_buf.len())?;
-    let body_len = checked_ffi_len("body", body_buf.len())?;
-
-    let cache_ttl_ms = if config.response_check {
-        config.transaction_ttl_ms
-    } else {
-        0
-    };
-
     // Per-message detect-only override. When set on a request-side message,
     // the WAF still evaluates rules normally but coerces the verdict to
     // `action=allow` while keeping `rule_id`, `anomaly_score`, etc.
@@ -530,38 +425,28 @@ fn process_request(
     let detect_only = message
         .get_bool("detect-only")
         .unwrap_or(config.detect_only);
-    let detect_only_flag = if detect_only { 1 } else { 0 };
-
     let start = std::time::Instant::now();
-    let result = unsafe {
-        ffi::coraza_process_request(
-            waf_handle,
-            tx_id_c.as_ptr(),
-            src_ip_c.as_ptr(),
-            src_port as c_int,
-            dst_ip_c.as_ptr(),
-            dst_port as c_int,
-            method_c.as_ptr(),
-            path_c.as_ptr(),
-            query_c.as_ptr(),
-            version_c.as_ptr(),
-            headers_buf.as_ptr() as *const _,
-            headers_len,
-            body_buf.as_ptr() as *const _,
-            body_len,
-            cache_ttl_ms,
-            config.max_cached_transactions,
-            detect_only_flag,
-            i32::from(config.expose_matched_data),
-            config.matched_data_max_bytes,
-        )
-    };
+    let result = backend::evaluate_request(
+        waf,
+        cache,
+        Request {
+            tx_id: &tx_id,
+            src_ip,
+            src_port,
+            dst_ip,
+            dst_port,
+            method,
+            path,
+            query,
+            version,
+            headers: &headers_buf,
+            body: &body_buf,
+        },
+        config,
+        detect_only,
+    )?;
     let elapsed = start.elapsed();
     let latency_us = elapsed.as_micros();
-
-    if result.action.is_null() {
-        return Err(format!("Coraza request evaluation failed: {}", last_ffi_error()).into());
-    }
 
     log::debug!(
         "coraza request: action={} rule_id={} latency_us={latency_us}",
@@ -572,9 +457,6 @@ fn process_request(
     emit_eval_metrics("request", &result, selected_app, elapsed);
 
     let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data);
-    result.free_data();
-    result.free_matched_rules();
-    result.free_matched_var();
 
     Ok(ProcessingResult { variables })
 }
@@ -609,12 +491,7 @@ fn deny_without_application() -> ProcessingResult {
 /// `process_request` and `process_response`; centralises the label
 /// shape so the two paths can't drift. Hub prefixes everything with
 /// `plugin_coraza_`.
-fn emit_eval_metrics(
-    phase: &str,
-    result: &ffi::CorazaResult,
-    app: &str,
-    elapsed: std::time::Duration,
-) {
+fn emit_eval_metrics(phase: &str, result: &Evaluation, app: &str, elapsed: std::time::Duration) {
     let action = result.action_str();
     METRICS.counter(
         "evaluations_total",
@@ -657,7 +534,7 @@ fn emit_eval_metrics(
 /// failure of the FFI payload increments `rule_hits_decode_errors_total`
 /// so a contract break between the Go bridge and this parser is
 /// operator-visible rather than a silent metric flatline.
-fn emit_rule_hit_metrics(phase: &str, result: &ffi::CorazaResult, app: &str) {
+fn emit_rule_hit_metrics(phase: &str, result: &Evaluation, app: &str) {
     #[derive(serde::Deserialize)]
     struct RuleHit {
         i: i64,
@@ -741,6 +618,7 @@ fn scoring_rule_ids(matched_rules: &str) -> String {
 fn process_response(
     message: &SpoeMessage,
     config: &PluginConfig,
+    cache: &TransactionCache,
 ) -> Result<ProcessingResult, Box<dyn std::error::Error + Send + Sync>> {
     let tx_id = message.get_string("id").unwrap_or("");
     let status_code = message.get_int("status").unwrap_or(0) as i32;
@@ -753,30 +631,19 @@ fn process_response(
     let headers_buf = extract_bytes_as_headers(message.get("headers"));
     let body_buf = extract_bytes(message.get("body"));
 
-    let tx_id_c = checked_cstring("transaction ID", tx_id)?;
-    let version_c = checked_cstring("HTTP version", version)?;
-    let headers_len = checked_ffi_len("headers", headers_buf.len())?;
-    let body_len = checked_ffi_len("body", body_buf.len())?;
-    let detect_only_flag = if detect_only { 1 } else { 0 };
-
     let start = std::time::Instant::now();
-    let result = unsafe {
-        ffi::coraza_process_response(
-            tx_id_c.as_ptr(),
-            status_code as c_int,
-            version_c.as_ptr(),
-            headers_buf.as_ptr() as *const _,
-            headers_len,
-            body_buf.as_ptr() as *const _,
-            body_len,
-            detect_only_flag,
-        )
-    };
+    let result = backend::evaluate_response(
+        cache,
+        Response {
+            tx_id,
+            status: status_code,
+            version,
+            headers: &headers_buf,
+            body: &body_buf,
+        },
+        detect_only,
+    )?;
     let elapsed = start.elapsed();
-
-    if result.action.is_null() {
-        return Err(format!("Coraza response evaluation failed: {}", last_ffi_error()).into());
-    }
 
     // No `app` label on the response path — the upstream coraza FFI
     // looks up the app context by tx_id, not by an arg. Pass empty
@@ -785,16 +652,13 @@ fn process_response(
     emit_eval_metrics("response", &result, "", elapsed);
 
     let variables = result_to_variables(&result, tx_id, true, false);
-    result.free_data();
-    result.free_matched_rules();
-    result.free_matched_var();
 
     Ok(ProcessingResult { variables })
 }
 
 /// Convert a CorazaResult into SPOE transaction variables.
 fn result_to_variables(
-    result: &CorazaResult,
+    result: &Evaluation,
     tx_id: &str,
     is_response: bool,
     expose_matched_data: bool,
@@ -892,76 +756,6 @@ fn parse_haproxy_headers(raw: &[u8]) -> Vec<u8> {
 }
 
 /// Create a WAF instance via FFI. Returns the handle or an error message.
-fn create_waf(
-    directives: &str,
-    directives_file: Option<&str>,
-    req_body_limit: i32,
-    req_body_mem_limit: i32,
-    resp_body_limit: i32,
-    config: &PluginConfig,
-) -> Result<u64, String> {
-    let dir_c = std::ffi::CString::new(directives)
-        .map_err(|_| "directives contain an interior NUL byte".to_string())?;
-    let file_c = directives_file
-        .map(std::ffi::CString::new)
-        .transpose()
-        .map_err(|_| "directives_file contains an interior NUL byte".to_string())?;
-    let file_ptr = file_c
-        .as_ref()
-        .map(|c| c.as_ptr())
-        .unwrap_or(std::ptr::null());
-
-    let handle = unsafe {
-        ffi::coraza_waf_new(
-            dir_c.as_ptr(),
-            checked_ffi_len("directives", dir_c.as_bytes().len())
-                .map_err(|error| error.to_string())?,
-            file_ptr,
-            std::ptr::null(),
-            req_body_limit as c_int,
-            req_body_mem_limit as c_int,
-            resp_body_limit as c_int,
-            i32::from(config.rule_match_log),
-            config.matched_data_log.ffi_value(),
-            config.matched_data_max_bytes,
-        )
-    };
-
-    if handle == 0 {
-        Err(last_ffi_error())
-    } else {
-        Ok(handle)
-    }
-}
-
-fn checked_cstring(
-    field: &str,
-    value: &str,
-) -> Result<std::ffi::CString, Box<dyn std::error::Error + Send + Sync>> {
-    std::ffi::CString::new(value)
-        .map_err(|_| format!("{field} contains an interior NUL byte").into())
-}
-
-fn checked_ffi_len(
-    field: &str,
-    value: usize,
-) -> Result<c_int, Box<dyn std::error::Error + Send + Sync>> {
-    c_int::try_from(value).map_err(|_| format!("{field} exceeds i32::MAX bytes").into())
-}
-
-/// Fetch and clear the last Go-side error message.
-fn last_ffi_error() -> String {
-    let err_ptr = unsafe { ffi::coraza_last_error() };
-    if err_ptr.is_null() {
-        return "unknown error".to_string();
-    }
-    let msg = unsafe { CStr::from_ptr(err_ptr) }
-        .to_string_lossy()
-        .to_string();
-    unsafe { ffi::coraza_free_string(err_ptr) };
-    msg
-}
-
 /// Extract raw bytes from a `SpoeValue` that may be `Binary` or `String`.
 fn extract_bytes(value: Option<&SpoeValue>) -> Vec<u8> {
     match value {
@@ -1418,9 +1212,10 @@ mod validate_tests {
         );
     }
 
+    #[cfg(feature = "go-backend")]
     #[test]
     fn malformed_validator_json_fails_closed() {
-        let diags = parse_validation_json("not-json");
+        let diags = backend::parse_validation_json("not-json");
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].severity, DiagnosticSeverity::Error);
         assert!(diags[0].message.as_str().contains("malformed diagnostics"));
@@ -1684,7 +1479,11 @@ mod reload_tests {
             .read()
             .unwrap_or_else(|error| error.into_inner());
         let generation = state.generation.as_ref().expect("generation");
-        unsafe { ffi::coraza_waf_rules_count(generation.default.as_ref().expect("default WAF").0) }
+        generation
+            .default
+            .as_ref()
+            .expect("default WAF")
+            .rule_count()
     }
 
     fn wait_for_rules(plugin: &CorazaPlugin, want: i32) -> bool {
@@ -1902,9 +1701,57 @@ mod reload_tests {
     }
 
     #[test]
+    fn pending_response_keeps_its_request_policy_across_a_plugin_reload() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut old_config = make_context(
+            r#"SecRuleEngine On
+SecRule RESPONSE_STATUS "@streq 201" "id:9201,phase:3,deny,status:418""#,
+        );
+        old_config
+            .config
+            .insert("response_check".into(), ConfigValue::Bool(true));
+        let mut original = CorazaPlugin::__new();
+        original.__init(&old_config).unwrap();
+        let result = original.__process(&make_check_request("/created")).unwrap();
+        let id = find_var(&result, "id").clone();
+
+        let mut replacement = CorazaPlugin::__new();
+        replacement
+            .__init(&make_context("SecRuleEngine On"))
+            .unwrap();
+        drop(original);
+        let mut response = SpoeMessage {
+            name: "check-response".into(),
+            args: RHashMap::new(),
+            stream_id: 1,
+            frame_id: 2,
+        };
+        response.args.insert("id".into(), id);
+        response.args.insert("status".into(), SpoeValue::Int32(201));
+        response
+            .args
+            .insert("version".into(), SpoeValue::String("HTTP/1.1".into()));
+        let first = replacement.__process(&response).unwrap();
+        assert!(matches!(
+            find_var(&first, "resp_status"),
+            SpoeValue::Int32(418)
+        ));
+        assert!(matches!(
+            find_var(&first, "resp_rule_id"),
+            SpoeValue::Int32(9201)
+        ));
+
+        let replay = replacement.__process(&response).unwrap();
+        assert!(matches!(
+            find_var(&replay, "resp_status"),
+            SpoeValue::Int32(503)
+        ));
+    }
+
+    #[test]
     fn failed_generation_build_leaves_serving_instance_unchanged_and_leak_free() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let baseline = backend::active_count();
         let mut serving = CorazaPlugin::__new();
         serving
             .__init(&make_context(
@@ -1921,7 +1768,7 @@ mod reload_tests {
         ));
         assert!(failed.is_err(), "candidate generation must fail atomically");
         assert_eq!(
-            unsafe { ffi::coraza_waf_active_count() },
+            backend::active_count(),
             baseline + 1,
             "the candidate's already-built default WAF must be reclaimed"
         );
@@ -1936,7 +1783,7 @@ mod reload_tests {
 
         drop(candidate);
         drop(serving);
-        assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+        assert_eq!(backend::active_count(), baseline);
     }
 
     #[test]
@@ -1976,7 +1823,7 @@ mod reload_tests {
     #[test]
     fn repeated_instance_drop_reclaims_every_waf_handle() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let baseline = backend::active_count();
         for generation in 0..3 {
             let mut plugin = CorazaPlugin::__new();
             plugin
@@ -1986,10 +1833,10 @@ mod reload_tests {
                     "SecRuleEngine DetectionOnly\n",
                 ))
                 .unwrap_or_else(|error| panic!("generation {generation} failed: {error}"));
-            assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline + 2);
+            assert_eq!(backend::active_count(), baseline + 2);
             drop(plugin);
             assert_eq!(
-                unsafe { ffi::coraza_waf_active_count() },
+                backend::active_count(),
                 baseline,
                 "generation {generation} leaked WAF handles"
             );
@@ -1999,7 +1846,7 @@ mod reload_tests {
     #[test]
     fn applications_with_equal_effective_configuration_share_one_waf() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let baseline = backend::active_count();
         let base = "SecRuleEngine On\n\
                     SecRule REQUEST_URI \"@streq /a\" \"id:9301,phase:1,deny,status:403\"\n\
                     SecRule REQUEST_URI \"@streq /b\" \"id:9302,phase:1,deny,status:403\"\n";
@@ -2020,7 +1867,7 @@ mod reload_tests {
         let mut plugin = CorazaPlugin::__new();
         plugin.__init(&context).expect("init");
         assert_eq!(
-            unsafe { ffi::coraza_waf_active_count() },
+            backend::active_count(),
             baseline + 3,
             "default+same-as-default, excluded+excluded-copy and larger-body compile once each"
         );
@@ -2042,13 +1889,13 @@ mod reload_tests {
         }
 
         drop(plugin);
-        assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+        assert_eq!(backend::active_count(), baseline);
     }
 
     #[test]
     fn disabled_default_waf_is_not_compiled_and_denies_requests_without_an_application() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let baseline = unsafe { ffi::coraza_waf_active_count() };
+        let baseline = backend::active_count();
         let rules = "SecRuleEngine On\n\
                      SecRule REQUEST_URI \"@streq /a\" \"id:9401,phase:1,deny,status:403\"\n";
         for apps in [vec![("app", rules, None)], vec![]] {
@@ -2059,7 +1906,7 @@ mod reload_tests {
             let mut plugin = CorazaPlugin::__new();
             plugin.__init(&context).expect("init");
             assert_eq!(
-                unsafe { ffi::coraza_waf_active_count() },
+                backend::active_count(),
                 baseline + apps.len() as i32,
                 "only applications compile"
             );
@@ -2084,7 +1931,7 @@ mod reload_tests {
             }
 
             drop(plugin);
-            assert_eq!(unsafe { ffi::coraza_waf_active_count() }, baseline);
+            assert_eq!(backend::active_count(), baseline);
         }
     }
 
