@@ -81,6 +81,9 @@ SecRule ARGS:a "@streq green" "id:10101,phase:2,deny,status:409"
 SecMarker PASS
 SecRule ARGS:b "@streq green" "id:10102,phase:2,deny,status:410"
 """
+    regex_literal = """SecAction "id:10601,phase:1,pass,setvar:'tx.pattern=blue'"
+SecRule ARGS:colour "@rx ^%{tx.pattern}$" "id:10602,phase:2,deny,status:409"
+"""
     pending_skip = """SecRule ARGS_POST:a "@streq green" "id:10501,phase:2,deny,status:412"
 {marker}
 SecRule REQUEST_METHOD "@streq POST" "id:10502,phase:1,pass,skipAfter:before"
@@ -150,6 +153,8 @@ SecRuleUpdateTargetById 941320 "!ARGS:comment"''')
         marker_scope('skip-target', ',skipAfter:MARK', 'SecMarker BEFORE\nSecMarker MARK', 'REQUEST_METHOD'),
         marker_scope('after-target', ',skipAfter:MARK', 'SecMarker MARK\nSecMarker AFTER', 'UNKNOWN'),
         marker_scope('inside-chain', ',chain', 'SecMarker MARK\nSecRule REQUEST_URI "@beginsWith /catalog" "t:none"', 'UNKNOWN'),
+        Policy('regex-literal-operand', BASE + regex_literal, (('tx-value', form('', 'colour=blue')),
+               ('literal', form('', 'colour=%25%7Btx.pattern%7D')))),
         *(Policy('regex-' + label, BASE + f'SecRule ARGS:colour "@rx {pattern}" "id:10601,phase:2,deny,status:409"',
                  (('multiline-form', form('', 'colour=red%0Ablue%0Agreen')),))
           for label, pattern in (('anchors', '^blue$'), ('multiline', '(?m)^blue$'), ('dot', '^red.*green$'))),
