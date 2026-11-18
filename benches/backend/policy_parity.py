@@ -152,7 +152,10 @@ SecRuleUpdateTargetById 941320 "!ARGS:comment"''')
         marker_scope('ordinary', '', 'SecMarker MARK', 'UNKNOWN'),
         marker_scope('skip-target', ',skipAfter:MARK', 'SecMarker BEFORE\nSecMarker MARK', 'REQUEST_METHOD'),
         marker_scope('after-target', ',skipAfter:MARK', 'SecMarker MARK\nSecMarker AFTER', 'UNKNOWN'),
-        marker_scope('inside-chain', ',chain', 'SecMarker MARK\nSecRule REQUEST_URI "@beginsWith /catalog" "t:none"', 'UNKNOWN'),
+        Policy('marker-inside-chain', BASE + '''SecRule REQUEST_METHOD "@streq GET" "id:10504,phase:1,deny,status:409,chain"
+SecMarker MARK
+SecRule REQUEST_URI "@streq /missing" "t:none"
+''', (('get', GET),)),
         Policy('regex-literal-operand', BASE + regex_literal, (('tx-value', form('', 'colour=blue')),
                ('literal', form('', 'colour=%25%7Btx.pattern%7D')))),
         *(Policy('regex-' + label, BASE + f'SecRule ARGS:colour "@rx {pattern}" "id:10601,phase:2,deny,status:409"',
