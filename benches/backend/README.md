@@ -8,6 +8,9 @@ Build the libraries from the same plugin revision. Separate target directories p
 CARGO_TARGET_DIR=target/bench-go cargo build --locked --release --lib
 CARGO_TARGET_DIR=target/bench-rust cargo build --locked --release --lib \
     --no-default-features --features rust-backend
+mkdir -p target/bench-plugins
+cp target/bench-go/release/libcoraza_plugin.so target/bench-plugins/
+cp target/bench-rust/release/libcoraza_plugin.so target/bench-plugins/libcoraza_rust_plugin.so
 ```
 
 The harness checks each unstripped library with `go version -m` and `nm`. Supply a release build of haproxy-spoa-hub. The recorded Linux run used the amd64 glibc binary from the [hub v0.13.0 release](https://github.com/haproxy-haptic/haproxy-spoa-hub/releases/tag/v0.13.0). Choose two server CPUs and a separate client CPU on different physical cores, as reported by `lscpu -e`. Run this command from the project root, substituting the hub path and CPU numbers for the host.
@@ -15,8 +18,8 @@ The harness checks each unstripped library with `go version -m` and `nm`. Supply
 ```sh
 python3 benches/backend/compare.py \
     --hub /path/to/haproxy-spoa-hub \
-    --go target/bench-go/release/libcoraza_plugin.so \
-    --rust target/bench-rust/release/libcoraza_plugin.so \
+    --go target/bench-plugins/libcoraza_plugin.so \
+    --rust target/bench-plugins/libcoraza_rust_plugin.so \
     --server-cpus 5,6 --client-cpu 2 --output comparison.json
 ```
 
