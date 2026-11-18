@@ -1,0 +1,1869 @@
+{
+  "startup_errors": {
+    "go": {},
+    "rust": {}
+  },
+  "hub_version": "haproxy-spoa-hub 0.13.0",
+  "binary_sha256": {
+    "hub": "8654587cfc720a157cb419c588a9c192a9ea8a314763282405d7204b263821ae",
+    "go": "482c164268862f26b1e89838d2bd2607775feae2121bac003d8261c5f007100b",
+    "rust": "3cd4e33674439ad1372a81ada0b6066ceaf9322405df63979b0452df0548c2df"
+  },
+  "artifacts": {
+    "go": {
+      "bytes": 21347280,
+      "go_build_info": true,
+      "go_version": "go1.27.4-X:nodwarf5",
+      "defined_markers": [
+        "_cgo_init",
+        "crosscall2",
+        "runtime.main"
+      ]
+    },
+    "rust": {
+      "bytes": 10941032,
+      "go_build_info": false,
+      "go_version": null,
+      "defined_markers": []
+    }
+  },
+  "policy_sha256": {
+    "phase-winner": "3f8960cf7fa58ef6e4cda96c81aa6b9368e517c862731cd1fe6e5ec203ae9865",
+    "count-two": "ce8fb03e85151fd269669f3b817ff35b16410f7d361ba3e5b2a2d14452c3307c",
+    "count-one": "0761ac9ed84d3059dfca7c6ddc03d410e550dcf7ce617200b99bd90b281968b4",
+    "excluded-count": "6417d4fad3e2f088dd6af23237b925a68a8f3af5b43fd61ea1d372344cb59101",
+    "names-count": "7105f72597d5fe595203c7d50c73c02915e4864f9d4b7c185f6e0f1cc38a458e",
+    "merged-exclusion": "830391ac6149ce1d97faa9f565e7b29686ea8416a0bc9698c02f483082e6d7d0",
+    "origin-and-case": "6a0c46004046795c9a3f587db4a1bd0b66ac18776ff75149b7446cd12661bfd7",
+    "json-names": "b207e7ae87787b69ecf542329f211b1f713ba76169ae846e66d38a1a6b1f7786",
+    "multiple-targets": "4f8faa050319fd2cb1d86752e6e61d8ca5cf74638c7e5efceb29fd209bf8d8dd",
+    "chain": "dc8cd78c67813f3abd8a09d49752733df8664bdadb336f3044f1407d5b13d26d",
+    "action-count": "ab89d62baeeb4e59c8207027344a3c20be16893de17362f6703c57b3a548ce58",
+    "chain-score": "da1bc6e3828c8b17e404824751314f7b1483f359cc383b1f6a54281d587743cf",
+    "response-phase-winner": "5cf47b5ead5b072f9ffbdcc5187746840a9ba56c542ea0fb4285f4f5944cff93",
+    "response-chain": "bd282dc0cc810239b36145781b81159ee08a1faec64e9f4579f6556e5cd47ee5",
+    "runtime-exclusion-args": "f21f11e435b4ca7277d95f7fd986e7d0070496f58a10ca0b26605c9fb6889a82",
+    "runtime-exclusion-args_get": "04645ddccf90365a4e284a2e6d9832fa28a721359594a2ff5cb4b91b66f06325",
+    "runtime-exclusion-args_post": "f03c8042be915ac73e1c7a0018eb896079cda34b0793549b32a74b3ad8a58f2b",
+    "skip-after": "4128df8edafbfa0f78e21380217a019f9b8bc86ca17986605cf278b3525a35f0",
+    "pending-skip-earlier": "8bc1eefe124bcca37eaf73113dfe00d5f855801d396336fd97a57e74cd58ca99",
+    "pending-skip-absent": "55b5f6d59288067f85b3e2cabb667ea45b563e39c3617fe48773d57aa237dca5",
+    "marker-ordinary": "a458aabc2a6d86f19691ac0d1dada25d4bb7e94c812a89acf1415bc1874d1757",
+    "marker-skip-target": "f7e85680f725d23effabfffb6fe3b5ec5dd91b02d96594069e54708c97509dd0",
+    "marker-after-target": "edb9566a4bca2763c8de9713ea669401cd16cd7011efac7196b56c77424f28b1",
+    "marker-inside-chain": "c49bc3bb6c3124d88a9aea71d8f9177f3bb42ae3832aa8ab28f9fbb2b1f9154e",
+    "regex-literal-operand": "8397558ef3bf798bdcef12e1d033ab938d0040e9bbd2f77cd315f932dfa54e66",
+    "regex-anchors": "16a4b0579cfa3ee759f63a3eaca05bd801097e2f50441f11be95e57e014f980c",
+    "regex-multiline": "cca5d09085f43fe0fdc8744f37182b4c32796e7aab8859d7f81789991b56c8de",
+    "regex-dot": "8fe24ffdeb5aac49058f6c8d3b4d30c72ccb1ece29070e464853546fe7c853b8",
+    "matched-vars-plural-reset": "28cb2c6a5fd2d9105a72cd3ab22f27b782f83b34e604a6e03b733184c2611bda",
+    "matched-vars-last-scalar": "c51a78d6709726dcc643a72de1b90db0ca747d7ae93ba9c3b808791189c6dc45",
+    "matched-vars-chain-scoped": "7b5257c33445139863f1536ff2158b32e435f24f76820bf263d1b87c3aef7793",
+    "matched-vars-empty-name": "b217ffd5e910474082f69050907b9a459cff31042dd0a385a89f29db0ecbd17f",
+    "matched-vars-action-name": "dad85f211c9f2ce15d94c25bf4f7c3aef0c9233f7d4b9a42244ae765ca2d54ff",
+    "stock-crs": "0059d196bc7121828456f2579659c3dc16c52588a85462a721486c696fe7f8f3",
+    "haptic-catalog": "f50023f48a76c9ce7ade01bb7d3406bf2473aeb760f4aa97bf272257fbfea45b"
+  },
+  "go": {
+    "phase-winner": {
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 410,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_URI",
+        "coraza.__status": "ok"
+      }
+    },
+    "count-two": {
+      "split": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "count-one": {
+      "split": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET",
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST",
+        "coraza.__status": "ok"
+      }
+    },
+    "excluded-count": {
+      "split": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST",
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST",
+        "coraza.__status": "ok"
+      }
+    },
+    "names-count": {
+      "split": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "merged-exclusion": {
+      "excluded-both": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only-hit": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:b",
+        "coraza.__status": "ok"
+      }
+    },
+    "origin-and-case": {
+      "query-first": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:Label",
+        "coraza.__status": "ok"
+      },
+      "body-first": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:LABEL",
+        "coraza.__status": "ok"
+      }
+    },
+    "json-names": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET_NAMES:Label",
+        "coraza.__status": "ok"
+      },
+      "json": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST_NAMES:json.Label",
+        "coraza.__status": "ok"
+      }
+    },
+    "multiple-targets": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "ARGS_GET:a,ARGS_GET:b,ARGS_GET:c",
+        "coraza.__status": "ok"
+      },
+      "mixed": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "ARGS_GET:b",
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "ARGS_POST:a,ARGS_POST:b,ARGS_POST:c",
+        "coraza.__status": "ok"
+      }
+    },
+    "chain": {
+      "body-hit": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 2,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_POST:b",
+        "coraza.__status": "ok"
+      },
+      "body-miss": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "query-hit": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 2,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:b",
+        "coraza.__status": "ok"
+      }
+    },
+    "action-count": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a,ARGS_GET:b",
+        "coraza.__status": "ok"
+      },
+      "mixed": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 3,
+        "coraza.matched_var": "ARGS_GET:a,ARGS_POST:b",
+        "coraza.__status": "ok"
+      },
+      "duplicate": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "chain-score": {
+      "duplicate": {
+        "coraza.action": "deny",
+        "coraza.status": 410,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 3,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:label,ARGS_POST:label",
+        "coraza.__status": "ok"
+      },
+      "distinct": {
+        "coraza.action": "deny",
+        "coraza.status": 411,
+        "coraza.rule_id": 10104,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 3,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:label,ARGS_POST:label,ARGS_POST:other",
+        "coraza.__status": "ok"
+      },
+      "query-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10103,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:label",
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10103,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_POST:label",
+        "coraza.__status": "ok"
+      },
+      "miss": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "response-phase-winner": {
+      "get": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "get-response": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 409,
+        "coraza.resp_rule_id": 10101,
+        "coraza.__status": "ok"
+      }
+    },
+    "response-chain": {
+      "get": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "get-response": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 412,
+        "coraza.resp_rule_id": 10102,
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "post-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "runtime-exclusion-args": {
+      "query": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "included-body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "runtime-exclusion-args_get": {
+      "query": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "included-body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "runtime-exclusion-args_post": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "included-body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "skip-after": {
+      "query": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "marker": {
+        "coraza.action": "deny",
+        "coraza.status": 410,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "pending-skip-earlier": {
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10503,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "pending-skip-absent": {
+      "body": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-ordinary": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10505,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-skip-target": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10505,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-after-target": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10505,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-inside-chain": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10504,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-literal-operand": {
+      "tx-value": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "literal": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10602,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:colour",
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-anchors": {
+      "multiline-form": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-multiline": {
+      "multiline-form": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10601,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:colour",
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-dot": {
+      "multiline-form": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10601,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:colour",
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-plural-reset": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-last-scalar": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10203,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-chain-scoped": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10201,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_METHOD,REQUEST_URI",
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-empty-name": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10201,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10201,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-action-name": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.__status": "ok"
+      }
+    },
+    "stock-crs": {
+      "GET": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.__status": "ok"
+      },
+      "GET-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "form": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.__status": "ok"
+      },
+      "form-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "json": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 64,
+        "coraza.__status": "ok"
+      },
+      "json-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "crs-method": {
+        "coraza.action": "deny",
+        "coraza.status": 403,
+        "coraza.rule_id": 949110,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 63,
+        "coraza.rule_ids": "911100",
+        "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "form-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "json-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 65,
+        "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "response-control-request": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.__status": "ok"
+      },
+      "response-control": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 412,
+        "coraza.resp_rule_id": 10102,
+        "coraza.__status": "ok"
+      }
+    },
+    "haptic-catalog": {
+      "GET": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.__status": "ok"
+      },
+      "GET-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "form": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 61,
+        "coraza.__status": "ok"
+      },
+      "form-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "json": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.__status": "ok"
+      },
+      "json-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "crs-method": {
+        "coraza.action": "deny",
+        "coraza.status": 403,
+        "coraza.rule_id": 949110,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 62,
+        "coraza.rule_ids": "911100",
+        "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "form-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "json-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 64,
+        "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "response-control-request": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.__status": "ok"
+      },
+      "response-control": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 412,
+        "coraza.resp_rule_id": 10102,
+        "coraza.__status": "ok"
+      }
+    }
+  },
+  "rust": {
+    "phase-winner": {
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 410,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_URI",
+        "coraza.__status": "ok"
+      }
+    },
+    "count-two": {
+      "split": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "count-one": {
+      "split": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET",
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST",
+        "coraza.__status": "ok"
+      }
+    },
+    "excluded-count": {
+      "split": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST",
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST",
+        "coraza.__status": "ok"
+      }
+    },
+    "names-count": {
+      "split": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "empty": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "merged-exclusion": {
+      "excluded-both": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "body-only-hit": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:b",
+        "coraza.__status": "ok"
+      }
+    },
+    "origin-and-case": {
+      "query-first": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:Label",
+        "coraza.__status": "ok"
+      },
+      "body-first": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:LABEL",
+        "coraza.__status": "ok"
+      }
+    },
+    "json-names": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET_NAMES:Label",
+        "coraza.__status": "ok"
+      },
+      "json": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST_NAMES:json.Label",
+        "coraza.__status": "ok"
+      }
+    },
+    "multiple-targets": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "ARGS_GET:a,ARGS_GET:b,ARGS_GET:c",
+        "coraza.__status": "ok"
+      },
+      "mixed": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "ARGS_GET:b",
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "ARGS_POST:a,ARGS_POST:b,ARGS_POST:c",
+        "coraza.__status": "ok"
+      }
+    },
+    "chain": {
+      "body-hit": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 2,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_POST:b",
+        "coraza.__status": "ok"
+      },
+      "body-miss": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "query-hit": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 2,
+        "coraza.rules_hit": 1,
+        "coraza.rule_ids": "10101",
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:b",
+        "coraza.__status": "ok"
+      }
+    },
+    "action-count": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a,ARGS_GET:b",
+        "coraza.__status": "ok"
+      },
+      "mixed": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 3,
+        "coraza.matched_var": "ARGS_GET:a,ARGS_POST:b",
+        "coraza.__status": "ok"
+      },
+      "duplicate": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "chain-score": {
+      "duplicate": {
+        "coraza.action": "deny",
+        "coraza.status": 410,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 3,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:label,ARGS_POST:label",
+        "coraza.__status": "ok"
+      },
+      "distinct": {
+        "coraza.action": "deny",
+        "coraza.status": 411,
+        "coraza.rule_id": 10104,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 3,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:label,ARGS_POST:label,ARGS_POST:other",
+        "coraza.__status": "ok"
+      },
+      "query-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10103,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_GET:label",
+        "coraza.__status": "ok"
+      },
+      "body-only": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10103,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD,ARGS_POST:label",
+        "coraza.__status": "ok"
+      },
+      "miss": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "response-phase-winner": {
+      "get": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "get-response": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 409,
+        "coraza.resp_rule_id": 10101,
+        "coraza.__status": "ok"
+      }
+    },
+    "response-chain": {
+      "get": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "get-response": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 412,
+        "coraza.resp_rule_id": 10102,
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      },
+      "post-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "runtime-exclusion-args": {
+      "query": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "included-body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "runtime-exclusion-args_get": {
+      "query": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "included-body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "runtime-exclusion-args_post": {
+      "query": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "included-body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_GET:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "skip-after": {
+      "query": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:a,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "marker": {
+        "coraza.action": "deny",
+        "coraza.status": 410,
+        "coraza.rule_id": 10102,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_GET:a",
+        "coraza.__status": "ok"
+      }
+    },
+    "pending-skip-earlier": {
+      "body": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10503,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:b,REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "pending-skip-absent": {
+      "body": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-ordinary": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10505,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-skip-target": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10505,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-after-target": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10505,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "marker-inside-chain": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10504,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-literal-operand": {
+      "tx-value": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "literal": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10602,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "ARGS_POST:colour",
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-anchors": {
+      "multiline-form": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-multiline": {
+      "multiline-form": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10601,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:colour",
+        "coraza.__status": "ok"
+      }
+    },
+    "regex-dot": {
+      "multiline-form": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10601,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "ARGS_POST:colour",
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-plural-reset": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-last-scalar": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10203,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.matched_var": "REQUEST_METHOD",
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-chain-scoped": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10201,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.matched_var": "REQUEST_METHOD,REQUEST_URI",
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 0,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-empty-name": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10201,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10201,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 1,
+        "coraza.__status": "ok"
+      }
+    },
+    "matched-vars-action-name": {
+      "get": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.__status": "ok"
+      },
+      "post": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10202,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 2,
+        "coraza.__status": "ok"
+      }
+    },
+    "stock-crs": {
+      "GET": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.__status": "ok"
+      },
+      "GET-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "form": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.__status": "ok"
+      },
+      "form-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "json": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 64,
+        "coraza.__status": "ok"
+      },
+      "json-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "crs-method": {
+        "coraza.action": "deny",
+        "coraza.status": 403,
+        "coraza.rule_id": 949110,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 63,
+        "coraza.rule_ids": "911100",
+        "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "form-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "json-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 65,
+        "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "response-control-request": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.__status": "ok"
+      },
+      "response-control": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 412,
+        "coraza.resp_rule_id": 10102,
+        "coraza.__status": "ok"
+      }
+    },
+    "haptic-catalog": {
+      "GET": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.__status": "ok"
+      },
+      "GET-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "form": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 61,
+        "coraza.__status": "ok"
+      },
+      "form-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "json": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 63,
+        "coraza.__status": "ok"
+      },
+      "json-response": {
+        "coraza.resp_action": "allow",
+        "coraza.resp_status": 0,
+        "coraza.resp_rule_id": 0,
+        "coraza.__status": "ok"
+      },
+      "crs-method": {
+        "coraza.action": "deny",
+        "coraza.status": 403,
+        "coraza.rule_id": 949110,
+        "coraza.anomaly_score": 5,
+        "coraza.rules_hit": 62,
+        "coraza.rule_ids": "911100",
+        "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "form-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "json-control": {
+        "coraza.action": "deny",
+        "coraza.status": 409,
+        "coraza.rule_id": 10101,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 64,
+        "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+        "coraza.__status": "ok"
+      },
+      "response-control-request": {
+        "coraza.action": "allow",
+        "coraza.status": 0,
+        "coraza.rule_id": 0,
+        "coraza.anomaly_score": 0,
+        "coraza.rules_hit": 62,
+        "coraza.__status": "ok"
+      },
+      "response-control": {
+        "coraza.resp_action": "deny",
+        "coraza.resp_status": 412,
+        "coraza.resp_rule_id": 10102,
+        "coraza.__status": "ok"
+      }
+    }
+  },
+  "differences": {},
+  "checked_acks": 99
+}
