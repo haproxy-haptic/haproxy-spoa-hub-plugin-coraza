@@ -2074,7 +2074,7 @@ dependencies = [
 [[package]]
 name = "zentinel-modsec"
 version = "0.6.0"
-source = "git+https://github.com/phihos/zentinel-modsec?rev=2b503049a21d7630db62a109b896d1b790163c21#2b503049a21d7630db62a109b896d1b790163c21"
+source = "git+https://github.com/phihos/zentinel-modsec?rev=bf8937f6e622796b05002f36e8f23bfe5bc0ba16#bf8937f6e622796b05002f36e8f23bfe5bc0ba16"
 dependencies = [
  "aho-corasick",
  "barbacane-libinjection",
