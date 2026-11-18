@@ -139,6 +139,9 @@ SecRuleUpdateTargetById 941320 "!ARGS:comment"''')
         *(Policy('pending-skip-' + label, BASE + pending_skip.format(marker=marker),
                  (('body', form('', 'a=green&b=green')),))
           for label, marker in (('earlier', 'SecMarker before'), ('absent', ''))),
+        *(Policy('regex-' + label, BASE + f'SecRule ARGS:colour "@rx {pattern}" "id:10601,phase:2,deny,status:409"',
+                 (('multiline-form', form('', 'colour=red%0Ablue%0Agreen')),))
+          for label, pattern in (('anchors', '^blue$'), ('multiline', '(?m)^blue$'), ('dot', '^red.*green$'))),
         *(Policy('matched-vars-' + label, BASE + rules, (('get', GET), ('post', FORM)))
           for label, rules in matched_vars.items()),
         Policy('stock-crs', POLICY, ()),
