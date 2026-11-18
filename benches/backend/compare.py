@@ -166,6 +166,32 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def inspect_plugin(path):
+    go = subprocess.run(['go', 'version', '-m', path], text=True, capture_output=True)
+    symbols = subprocess.check_output(['nm', '--defined-only', path], text=True)
+    names = {row.split()[-1] for row in symbols.splitlines() if row.split()}
+    if not names:
+        raise ValueError(f'need unstripped release library to check symbols: {path}')
+    markers = ('runtime.main', 'crosscall2', '_cgo_init', 'libinjection_sqli', 'libinjection_xss')
+    return {'bytes': path.stat().st_size, 'go_build_info': go.returncode == 0 and bool(go.stdout.strip()),
+            'go_version': go.stdout.splitlines()[0].split(': ', 1)[-1] if go.stdout.strip() else None,
+            'defined_markers': sorted(names.intersection(markers))}
+
+
+def memory(pid):
+    # Kernel RSS high-water and proportional resident pages of this hub process.
+    fields = {}
+    for filename, keys in [('status', ('VmHWM',)), ('smaps_rollup', ('Pss', 'Rss'))]:
+        for row in Path(f'/proc/{pid}/{filename}').read_text().splitlines():
+            key, _, value = row.partition(':')
+            if key in keys:
+                size, unit = value.split()
+                if unit != 'kB':
+                    raise ValueError(f'unexpected memory unit {unit}')
+                fields[key + '_KiB'] = int(size)
+    return fields
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('hub', 'go', 'rust', 'output'):
@@ -180,10 +206,16 @@ def main():
         parser.error('use separate client and server CPUs, at least two pairs and a positive count')
     workers = {k: getattr(args, k).resolve(strict=True) for k in ('go', 'rust')}
     binary = args.hub.resolve(strict=True)
+    artifacts = {name: inspect_plugin(path) for name, path in workers.items()}
+    if not artifacts['go']['go_build_info'] or 'runtime.main' not in artifacts['go']['defined_markers']:
+        raise ValueError(f"missing Go runtime in Go comparator: {artifacts['go']}")
+    if artifacts['rust']['go_build_info'] or artifacts['rust']['defined_markers']:
+        raise ValueError(f"unexpected Go/C detector in Rust comparator: {artifacts['rust']}")
     os.sched_setaffinity(0, {args.client_cpu})
     result = {
         'host': platform.platform(), 'hub_version': subprocess.check_output([binary, '--version'], text=True).strip(),
         'sha256': {k: digest(v) for k, v in {'hub': binary, **workers}.items()},
+        'artifacts': artifacts, 'post_workload_memory': {},
         'policy_sha256': hashlib.sha256(POLICY.encode()).hexdigest(),
         'server_cpus': sorted(cpus), 'client_cpu': args.client_cpu,
         'pairs': args.pairs, 'requests_per_batch': args.count,
@@ -223,6 +255,9 @@ def main():
                         summary[metric]['paired_rust_change_pct'] = round(median(
                             100 * (b['rust'][metric] / b['go'][metric] - 1) for b in batches), 2)
                     result['summary'][workload] = summary
+                    result['post_workload_memory'][workload] = {
+                        name: memory(pid) for name, (pid, _) in servers.items()
+                    }
                     print(workload, json.dumps(summary), flush=True)
     with args.output.open('x') as f:
         json.dump(result, f, indent=2)

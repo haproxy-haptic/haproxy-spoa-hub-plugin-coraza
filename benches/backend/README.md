@@ -10,7 +10,7 @@ CARGO_TARGET_DIR=target/bench-rust cargo build --locked --release --lib \
     --no-default-features --features rust-backend
 ```
 
-Supply a release build of haproxy-spoa-hub. The recorded Linux run used the amd64 glibc binary from the [hub v0.13.0 release](https://github.com/haproxy-haptic/haproxy-spoa-hub/releases/tag/v0.13.0). Choose two server CPUs and a separate client CPU on different physical cores, as reported by `lscpu -e`. Run this command from the project root, substituting the hub path and CPU numbers for the host.
+The harness checks each unstripped library with `go version -m` and `nm`. Supply a release build of haproxy-spoa-hub. The recorded Linux run used the amd64 glibc binary from the [hub v0.13.0 release](https://github.com/haproxy-haptic/haproxy-spoa-hub/releases/tag/v0.13.0). Choose two server CPUs and a separate client CPU on different physical cores, as reported by `lscpu -e`. Run this command from the project root, substituting the hub path and CPU numbers for the host.
 
 ```sh
 python3 benches/backend/compare.py \
@@ -23,3 +23,5 @@ python3 benches/backend/compare.py \
 Each backend receives 100 warmup requests per workload. The client measures 12 alternating Go/Rust pairs of 300 requests. GET has a query string. Form and JSON POST use complete buffered bodies. The response profile uses fresh hub processes, enables transaction retention, and sends a request followed by the correlated response. Its latency is the sum of the two socket exchanges. The timer starts before sending a prepared frame and stops when the full ACK has arrived.
 
 The report includes median batch p50, p95 and p99 latency, and process CPU per completed workload across all hub and plugin threads. The paired percentage compares adjacent batches. It includes the hashes of the hub and both libraries, the policy hash, each batch and the correctness probes. Startup, rule loading and client-side ACK decoding are outside the latency interval. This measures single-in-flight local SPOA traffic. Saturation throughput and HAProxy HTTP processing require different workloads.
+
+On Linux the harness also samples each hub process after the workload, including plugin state and runtime. PSS apportions shared pages. VmHWM is peak RSS since that process started. These point-in-time figures depend on allocator and GC behavior.
