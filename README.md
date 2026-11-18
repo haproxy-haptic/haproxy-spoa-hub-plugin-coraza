@@ -27,7 +27,7 @@ The release workflow builds and signs both libraries for each supported architec
 
 ### Choosing an engine for a policy
 
-Both builds include the same OWASP CRS 4.25.0 files. Go Coraza enables multiphase evaluation. The Rust fork evaluates rules in their declared phase. For example, a phase-2 rule inspecting only the request method can fire during phase 1 with Go. With one query argument and one form argument, the Rust count `&ARGS` is two. The Go multiphase build counts the GET and POST collections separately. Policies that use counts, early blocking, or transaction variables written across phases should be tested with the chosen engine. For a rule link that matches several fields, the Rust engine records its first matched field in audit data. Go can report additional field names in `matched_var`.
+Both plugins load OWASP CRS 4.25.0 and use Coraza's multiphase evaluation order. A phase-2 rule that inspects only the request method can block during phase 1. A rule that counts `&ARGS` counts query arguments during request-header inspection and form arguments during body inspection. The hub reports up to five distinct matched input fields, including their query or body origin. The [policy comparison](benches/backend/README.md) runs the same requests through each plugin and compares the hub's returned variables.
 
 The Rust build compiles embedded and staged rule files in a private temporary directory. Give the hub a writable `TMPDIR`. For admission of a staged JSON Schema, include its referenced JSON files in the same staged tree. The Rust backend reports unsupported rule features during policy loading. Connector match logging is available on both builds. Policies that require Coraza-managed audit files should use Go.
 
