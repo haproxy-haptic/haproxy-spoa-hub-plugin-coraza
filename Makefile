@@ -1,4 +1,4 @@
-.PHONY: build build-release test test-go fuzz-go bench-go bench-ffi fmt lint no-replace check test-e2e verify-release
+.PHONY: build build-backends build-release test test-go fuzz-go bench-go bench-ffi fmt lint no-replace check test-e2e verify-release
 
 GO_TAGS := coraza.rule.multiphase_evaluation,coraza.rule.no_regex_multiline
 
@@ -7,6 +7,20 @@ build:
 
 build-release:
 	cargo build --release
+
+# Keep the installed Go filename stable so existing hub configs keep working.
+CARGO ?= cargo
+GO_TARGET_DIR ?= target/go
+RUST_TARGET_DIR ?= target/rust
+BUNDLE_DIR ?= target/plugin-bundle
+TARGET_FLAG = $(if $(RUST_TARGET),--target $(RUST_TARGET))
+RELEASE_DIR = $(if $(RUST_TARGET),$(RUST_TARGET)/)release
+
+build-backends:
+	$(CARGO) build --locked --release $(TARGET_FLAG) --target-dir "$(GO_TARGET_DIR)" --no-default-features --features go-backend
+	$(CARGO) build --locked --release $(TARGET_FLAG) --target-dir "$(RUST_TARGET_DIR)" --no-default-features --features rust-backend
+	install -D -m 755 "$(GO_TARGET_DIR)/$(RELEASE_DIR)/libcoraza_plugin.so" "$(BUNDLE_DIR)/libcoraza_plugin.so"
+	install -D -m 755 "$(RUST_TARGET_DIR)/$(RELEASE_DIR)/libcoraza_plugin.so" "$(BUNDLE_DIR)/libcoraza_rust_plugin.so"
 
 test-go:
 	cd go && go test -race -tags "$(GO_TAGS)" ./...

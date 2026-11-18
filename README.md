@@ -1,30 +1,29 @@
 # Coraza WAF Plugin for haproxy-spoa-hub
 
-A [haproxy-spoa-hub](https://github.com/haproxy-spoa-hub) plugin that embeds the [Coraza WAF](https://coraza.io/) engine for HTTP request and response inspection against OWASP CRS v4 rulesets.
-
-## Overview
-
-This plugin eliminates the double-IPC cost for operators who run both haproxy-spoa-hub (for plugins like fingerprinting, external auth) and the standalone [coraza-spoa](https://github.com/corazawaf/coraza-spoa). By embedding Coraza directly into a hub plugin via Go-to-Rust FFI, WAF evaluation happens in-process without additional network hops.
-
-## Prerequisites
-
-- Go 1.25+
-- Rust 1.86+ (edition 2024)
-- GCC (for CGo)
-- haproxy-spoa-hub binary
-
-For cross-compilation:
-- `gcc-aarch64-linux-gnu` (arm64)
-- `gcc-arm-linux-gnueabihf` (armv7)
+This [haproxy-spoa-hub](https://github.com/haproxy-haptic/haproxy-spoa-hub) plugin inspects HTTP requests and responses in the hub process. Choose the WAF engine when building the plugin. Both builds expose the same plugin name, hub configuration and SPOE messages.
 
 ## Build
 
-```bash
-make build-release
-# Output: target/release/libcoraza_plugin.so
+The default build uses Go Coraza and links it into the plugin as a C archive. It requires Rust, Go 1.26 or newer, and a C compiler.
+
+```sh
+cargo build --locked --release --target-dir target/go
 ```
 
-The build process compiles the Go Coraza wrapper as a `c-archive` and statically links it into the Rust cdylib plugin.
+For the Rust engine, use Rust 1.94.1 or newer. This build uses the pinned [zentinel-modsec fork](https://github.com/phihos/zentinel-modsec) and its Rust libinjection detector. It builds without a Go toolchain.
+
+```sh
+cargo build --locked --release --no-default-features --features rust-backend --target-dir target/rust
+```
+
+To prepare both libraries for a HAPTIC hub image, run `make build-backends` and copy the contents of `target/plugin-bundle/` to the hub plugin directory. Select the engine with the existing `library` setting in the `coraza` plugin entry. All other message routing and configuration keys stay the same.
+
+| Hub library setting | Engine |
+|---|---|
+| `library = "libcoraza_plugin.so"` | Go Coraza |
+| `library = "libcoraza_rust_plugin.so"` | Rust zentinel-modsec |
+
+The release workflow builds and signs both libraries for each supported architecture. For cross-compilation, install the target's system linker. The Go build also uses a target C compiler for cgo.
 
 ## Configuration
 
