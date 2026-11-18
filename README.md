@@ -121,7 +121,7 @@ The plugin sets these variables in HAProxy (prefixed with `hub.<plugin_name>.`):
 
 ## Performance Tuning
 
-Keep the Go runtime under the container limit, but leave garbage collection
+For the Go build, keep the Go runtime under the container limit, but leave garbage collection
 enabled. Disabling GC allows hostile request traffic to grow the process until
 the kernel kills it.
 
@@ -130,7 +130,7 @@ the kernel kills it.
 export GOMEMLIMIT=192MiB
 ```
 
-The build uses the stable `coraza.rule.multiphase_evaluation` and
+The Go build uses the stable `coraza.rule.multiphase_evaluation` and
 `coraza.rule.no_regex_multiline` tags. Regex pre-filtering is enabled through the
 public runtime directive `SecRxPreFilter On`; Coraza does not guarantee internal
 build-tag compatibility across minor releases.

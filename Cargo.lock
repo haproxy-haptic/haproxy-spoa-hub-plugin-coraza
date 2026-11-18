@@ -362,6 +362,8 @@ dependencies = [
  "sha2",
  "tar",
  "tempfile",
+ "tracing",
+ "tracing-subscriber",
  "zentinel-modsec",
 ]
 

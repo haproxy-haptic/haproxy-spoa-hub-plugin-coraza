@@ -1269,6 +1269,10 @@ mod validate_tests {
     }
 }
 
+// Serializes tests that observe the number of live WAF generations.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[cfg(test)]
 mod reload_tests {
     //! Regression tests for atomic, instance-owned reload generations. The hub
@@ -1282,8 +1286,6 @@ mod reload_tests {
         ConfigValue, PluginContext, RHashMap, RString, SpoeMessage, SpoeValue,
     };
     use std::thread;
-
-    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // The whole point of the feature: a rule file changing on disk must change
     // the WAF that serves traffic, with no reload of the hub. Exercises the
