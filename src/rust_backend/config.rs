@@ -157,7 +157,7 @@ fn compile(parser: Parser, files: &RuleFiles) -> zentinel_modsec::Result<ModSecu
             rule.location.file = Some(root.join(filename));
         }
     }
-    let rules = diagnostics::checked(|| CompiledRuleset::compile(directives))?;
+    let rules = diagnostics::checked(|| CompiledRuleset::compile_multiphase(directives))?;
     for phase in Phase::ALL {
         for rule in rules.rules_for_phase(phase) {
             if rule.operator.name() == "noMatch" && rule.operator_spec.name != OperatorName::NoMatch

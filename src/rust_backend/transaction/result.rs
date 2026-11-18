@@ -79,7 +79,7 @@ impl RuleCatalog {
                     continue;
                 };
                 let mut severity = None;
-                let mut log = phase == Phase::RequestBody;
+                let mut log = rule.phase == Phase::RequestBody;
                 for action in &rule.actions {
                     match action {
                         Action::Metadata(MetadataAction::Severity(n)) => severity = Some(*n),
