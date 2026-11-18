@@ -14,7 +14,7 @@ use haproxy_spoa_hub_plugin_api::Diagnostic;
 use tempfile::TempDir;
 use zentinel_modsec::{
     CompiledRuleset, Error, ModSecurity,
-    engine::phase::Phase,
+    engine::{phase::Phase, ruleset::CompileOptions},
     error::SourceLocation,
     parser::{Directive, OperatorName, Parser, ParserHost},
 };
@@ -157,7 +157,9 @@ fn compile(parser: Parser, files: &RuleFiles) -> zentinel_modsec::Result<ModSecu
             rule.location.file = Some(root.join(filename));
         }
     }
-    let rules = diagnostics::checked(|| CompiledRuleset::compile_multiphase(directives))?;
+    let rules = diagnostics::checked(|| {
+        CompiledRuleset::compile_with_options(directives, CompileOptions::CORAZA_SPOA)
+    })?;
     for phase in Phase::ALL {
         for rule in rules.rules_for_phase(phase) {
             if rule.operator.name() == "noMatch" && rule.operator_spec.name != OperatorName::NoMatch
