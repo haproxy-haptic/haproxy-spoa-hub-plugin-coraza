@@ -86,6 +86,13 @@ SecRule ARGS:b "@streq green" "id:10102,phase:2,deny,status:410"
 SecRule REQUEST_METHOD "@streq POST" "id:10502,phase:1,pass,skipAfter:before"
 SecRule ARGS_POST:b "@streq green" "id:10503,phase:2,deny,status:409"
 """
+    def marker_scope(label, action, markers, expected_name):
+        directives = f'''SecRule REQUEST_METHOD "@streq GET" "id:10504,phase:1,pass{action}"
+{markers}
+SecRule MATCHED_VAR_NAME "@streq {expected_name}" "id:10505,phase:1,deny,status:409"
+'''
+        return Policy('marker-' + label, BASE + directives, (('get', GET),))
+
     matched_vars = {
         'plural-reset': """SecRule REQUEST_METHOD "@streq GET" "id:10201,phase:1,pass"
 SecRule &MATCHED_VARS "@eq 0" "id:10202,phase:1,deny,status:409"
@@ -139,6 +146,10 @@ SecRuleUpdateTargetById 941320 "!ARGS:comment"''')
         *(Policy('pending-skip-' + label, BASE + pending_skip.format(marker=marker),
                  (('body', form('', 'a=green&b=green')),))
           for label, marker in (('earlier', 'SecMarker before'), ('absent', ''))),
+        marker_scope('ordinary', '', 'SecMarker MARK', 'UNKNOWN'),
+        marker_scope('skip-target', ',skipAfter:MARK', 'SecMarker BEFORE\nSecMarker MARK', 'REQUEST_METHOD'),
+        marker_scope('after-target', ',skipAfter:MARK', 'SecMarker MARK\nSecMarker AFTER', 'UNKNOWN'),
+        marker_scope('inside-chain', ',chain', 'SecMarker MARK\nSecRule REQUEST_URI "@beginsWith /catalog" "t:none"', 'UNKNOWN'),
         *(Policy('regex-' + label, BASE + f'SecRule ARGS:colour "@rx {pattern}" "id:10601,phase:2,deny,status:409"',
                  (('multiline-form', form('', 'colour=red%0Ablue%0Agreen')),))
           for label, pattern in (('anchors', '^blue$'), ('multiline', '(?m)^blue$'), ('dot', '^red.*green$'))),
