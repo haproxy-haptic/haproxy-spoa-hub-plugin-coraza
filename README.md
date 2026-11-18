@@ -127,7 +127,7 @@ The plugin sets these variables in HAProxy (prefixed with `hub.<plugin_name>.`):
 
 ## Performance Tuning
 
-With one request in flight through hub v0.13.0 and the full OWASP CRS 4.25.0, median GET latency was 634 µs with Go and 121 µs with Rust. A request plus its correlated response took 799 µs and 199 µs respectively. [Benchmark report and replay instructions](benches/backend/results/786d014.md)
+With one request in flight through hub v0.13.0 and OWASP CRS 4.25.0, median GET latency was 1,382 µs with Go and 324 µs with Rust. A request and its correlated response took 1,474 µs and 384 µs respectively. These figures come from interleaved runs on a shared Linux host. [Benchmark, policy comparison and replay instructions](benches/backend/results/993a588.md)
 
 For the Go build, keep the Go runtime under the container limit, but leave garbage collection
 enabled. Disabling GC allows hostile request traffic to grow the process until
