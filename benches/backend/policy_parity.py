@@ -81,6 +81,11 @@ SecRule ARGS:a "@streq green" "id:10101,phase:2,deny,status:409"
 SecMarker PASS
 SecRule ARGS:b "@streq green" "id:10102,phase:2,deny,status:410"
 """
+    pending_skip = """SecRule ARGS_POST:a "@streq green" "id:10501,phase:2,deny,status:412"
+{marker}
+SecRule REQUEST_METHOD "@streq POST" "id:10502,phase:1,pass,skipAfter:before"
+SecRule ARGS_POST:b "@streq green" "id:10503,phase:2,deny,status:409"
+"""
     matched_vars = {
         'plural-reset': """SecRule REQUEST_METHOD "@streq GET" "id:10201,phase:1,pass"
 SecRule &MATCHED_VARS "@eq 0" "id:10202,phase:1,deny,status:409"
@@ -131,6 +136,9 @@ SecRuleUpdateTargetById 941320 "!ARGS:comment"''')
         *(runtime_exclusion(collection) for collection in ('ARGS', 'ARGS_GET', 'ARGS_POST')),
         Policy('skip-after', BASE + skip, (('query', form('a=green', 'b=red')),
                ('body', form('', 'a=green')), ('marker', form('', 'b=green')), ('get', request(query='a=green')))),
+        *(Policy('pending-skip-' + label, BASE + pending_skip.format(marker=marker),
+                 (('body', form('', 'a=green&b=green')),))
+          for label, marker in (('earlier', 'SecMarker before'), ('absent', ''))),
         *(Policy('matched-vars-' + label, BASE + rules, (('get', GET), ('post', FORM)))
           for label, rules in matched_vars.items()),
         Policy('stock-crs', POLICY, ()),
