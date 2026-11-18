@@ -88,7 +88,7 @@ def probes(client, responses):
 
 
 @contextmanager
-def hub(binary, plugin, directory, cpus, responses):
+def hub(binary, plugin, directory, cpus, responses, policy=POLICY):
     directory.mkdir()
     address = directory / 'hub.sock'
     config = directory / 'hub.toml'
@@ -105,7 +105,7 @@ name = "coraza"
 library = {json.dumps(plugin.name)}
 messages = ["check-request", "check-response"]
 [plugins.params]
-directives = {json.dumps(POLICY)}
+directives = {json.dumps(policy)}
 response_check = {str(responses).lower()}
 rule_watch_interval_ms = 0
 ''')
@@ -178,6 +178,15 @@ def inspect_plugin(path):
             'defined_markers': sorted(names.intersection(markers))}
 
 
+def inspect_backends(workers):
+    artifacts = {name: inspect_plugin(path) for name, path in workers.items()}
+    if not artifacts['go']['go_build_info'] or 'runtime.main' not in artifacts['go']['defined_markers']:
+        raise ValueError(f"missing Go runtime in Go comparator: {artifacts['go']}")
+    if artifacts['rust']['go_build_info'] or artifacts['rust']['defined_markers']:
+        raise ValueError(f"unexpected Go/C detector in Rust comparator: {artifacts['rust']}")
+    return artifacts
+
+
 def memory(pid):
     # Kernel RSS high-water and proportional resident pages of this hub process.
     fields = {}
@@ -206,11 +215,7 @@ def main():
         parser.error('use separate client and server CPUs, at least two pairs and a positive count')
     workers = {k: getattr(args, k).resolve(strict=True) for k in ('go', 'rust')}
     binary = args.hub.resolve(strict=True)
-    artifacts = {name: inspect_plugin(path) for name, path in workers.items()}
-    if not artifacts['go']['go_build_info'] or 'runtime.main' not in artifacts['go']['defined_markers']:
-        raise ValueError(f"missing Go runtime in Go comparator: {artifacts['go']}")
-    if artifacts['rust']['go_build_info'] or artifacts['rust']['defined_markers']:
-        raise ValueError(f"unexpected Go/C detector in Rust comparator: {artifacts['rust']}")
+    artifacts = inspect_backends(workers)
     os.sched_setaffinity(0, {args.client_cpu})
     result = {
         'host': platform.platform(), 'hub_version': subprocess.check_output([binary, '--version'], text=True).strip(),

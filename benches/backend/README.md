@@ -30,3 +30,16 @@ Each backend receives 100 warmup requests per workload. The client measures 12 a
 The report includes median batch p50, p95 and p99 latency, and process CPU per completed workload across all hub and plugin threads. The paired percentage compares adjacent batches. It includes the hashes of the hub and both libraries, the policy hash, each batch and the correctness probes. Startup, rule loading and client-side ACK decoding are outside the latency interval. This measures single-in-flight local SPOA traffic. Saturation throughput and HAProxy HTTP processing require different workloads.
 
 On Linux the harness also samples each hub process after the workload, including plugin state and runtime. PSS apportions shared pages. VmHWM is peak RSS since that process started. These point-in-time figures depend on allocator and GC behavior.
+
+## Compare policy decisions
+
+Run the policy comparison against the same release libraries and hub. It sends benign requests through isolated policies for phase order, counts and exclusions, argument names, multiple matches, chained actions and response processing. It also exercises the full CRS and a representative HAPTIC configuration with method, score-threshold and target overrides.
+
+```sh
+python3 benches/backend/policy_parity.py \
+    --hub /path/to/haproxy-spoa-hub \
+    --go target/bench-plugins/libcoraza_plugin.so \
+    --rust target/bench-plugins/libcoraza_rust_plugin.so --output policy-parity.json
+```
+
+A difference in any returned SPOA field fails the comparison. Each response uses the transaction ID returned by its own backend. IDs are generated independently and are excluded from the field comparison. The JSON records binary and policy hashes, both sets of returned fields, and any differences.
