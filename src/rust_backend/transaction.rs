@@ -115,6 +115,7 @@ pub(crate) fn evaluate_request(
     request.validate()?;
     let mut tx = waf.engine.new_transaction_with_id(request.tx_id);
     tx.set_source_qualified_argument_names(true);
+    result::record_request_fields(&mut tx);
     tx.set_record_rule_messages(waf.catalog.log_matches);
     let mut lease = Lease {
         tx,

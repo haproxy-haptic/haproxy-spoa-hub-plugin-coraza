@@ -163,45 +163,24 @@ impl RuleCatalog {
     }
 
     fn matched_variables(&self, tx: &Transaction, preferred: i32) -> String {
-        const INPUTS: &[&str] = &[
-            "ARGS",
-            "REQUEST_HEADERS",
-            "REQUEST_COOKIES",
-            "REQUEST_URI",
-            "REQUEST_BODY",
-            "REQUEST_LINE",
-            "REQUEST_FILENAME",
-            "REQUEST_METHOD",
-            "REQUEST_PROTOCOL",
-            "QUERY_STRING",
-            "PATH_INFO",
-            "FILES",
-            "MULTIPART",
-            "XML",
-            "JSON",
-        ];
         let mut matches = Vec::new();
-        for data in tx.matched_data() {
-            let name = data.variable.as_str();
-            let (collection, key) = name.split_once(':').unwrap_or((name, ""));
-            if !INPUTS.iter().any(|prefix| collection.starts_with(prefix)) {
+        for (id, name) in tx.matched_fields() {
+            let Some(info) = id.and_then(|id| self.rules.get(id)) else {
                 continue;
-            }
-            let info = data.rule_id.as_ref().and_then(|id| self.rules.get(id));
-            let rank = if preferred != 0 && info.is_some_and(|rule| rule.id == i64::from(preferred))
-            {
+            };
+            let rank = if preferred != 0 && info.id == i64::from(preferred) {
                 0
             } else {
-                1 + u16::from(info.and_then(|rule| rule.severity).unwrap_or(u8::MAX))
+                1 + u16::from(info.severity.unwrap_or(u8::MAX))
             };
-            matches.push((rank, if key.is_empty() { collection } else { name }));
+            matches.push((rank, name));
         }
         matches.sort_by_key(|&(rank, _)| rank);
-        let mut names = Vec::with_capacity(5);
+        let mut names = Vec::with_capacity(MAX_MATCHED_FIELDS);
         for (_, name) in matches {
             if !names.contains(&name) {
                 names.push(name);
-                if names.len() == 5 {
+                if names.len() == MAX_MATCHED_FIELDS {
                     break;
                 }
             }
@@ -231,6 +210,37 @@ impl RuleCatalog {
             }
         }
     }
+}
+
+const MAX_MATCHED_FIELDS: usize = 5;
+
+pub(super) fn record_request_fields(tx: &mut Transaction) {
+    tx.record_matched_fields(MAX_MATCHED_FIELDS, request_field);
+}
+
+fn request_field(name: &str) -> Option<&str> {
+    const INPUTS: &[&str] = &[
+        "ARGS",
+        "REQUEST_HEADERS",
+        "REQUEST_COOKIES",
+        "REQUEST_URI",
+        "REQUEST_BODY",
+        "REQUEST_LINE",
+        "REQUEST_FILENAME",
+        "REQUEST_METHOD",
+        "REQUEST_PROTOCOL",
+        "QUERY_STRING",
+        "PATH_INFO",
+        "FILES",
+        "MULTIPART",
+        "XML",
+        "JSON",
+    ];
+    let (collection, key) = name.split_once(':').unwrap_or((name, ""));
+    INPUTS
+        .iter()
+        .any(|prefix| collection.starts_with(prefix))
+        .then_some(if key.is_empty() { collection } else { name })
 }
 
 fn bounded(bytes: &[u8], limit: i32) -> String {
@@ -271,6 +281,7 @@ SecRule ARGS:category "@streq books" "id:2,phase:1,deny,status:418,severity:CRIT
         .unwrap();
         let catalog = RuleCatalog::new(&engine, &PluginConfig::default());
         let mut tx = engine.new_transaction();
+        record_request_fields(&mut tx);
         tx.process_uri("/?category=books", "GET", "HTTP/1.1")
             .unwrap();
         tx.process_request_headers().unwrap();
@@ -290,6 +301,38 @@ SecRule ARGS:category "@streq books" "id:2,phase:1,deny,status:418,severity:CRIT
     }
 
     #[test]
+    fn matched_field_list_includes_later_targets_and_ranks_whole_chains() {
+        let engine = ModSecurity::from_string(
+            r#"
+SecRuleEngine On
+SecRule ARGS:fallback|ARGS:extra "@streq green" "id:1,phase:1,pass,severity:NOTICE"
+SecRule ARGS:a|ARGS:other "@streq green" "id:2,phase:1,pass,severity:CRITICAL"
+SecRule REQUEST_METHOD "@streq GET" "id:3,phase:1,pass,chain"
+SecRule ARGS:missing "@streq green" "t:none"
+SecRule ARGS:a|ARGS:b "@streq green" "id:4,phase:1,deny,chain"
+SecRule ARGS:b|ARGS:c "@streq green" "t:none"
+"#,
+        )
+        .unwrap();
+        let catalog = RuleCatalog::new(&engine, &PluginConfig::default());
+        let mut tx = engine.new_transaction();
+        record_request_fields(&mut tx);
+        tx.process_uri(
+            "/?fallback=green&extra=green&other=green&a=green&b=green&c=green",
+            "GET",
+            "HTTP/1.1",
+        )
+        .unwrap();
+        tx.process_request_headers().unwrap();
+        let result = catalog.result(&tx, true, 512);
+        assert_eq!((result.status, result.rule_id), (403, 4));
+        assert_eq!(
+            result.matched_var,
+            "ARGS:a,ARGS:b,ARGS:c,ARGS:other,ARGS:fallback"
+        );
+    }
+
+    #[test]
     fn exposed_redirect_data_uses_the_configured_byte_limit() {
         let engine = ModSecurity::from_string(
             r#"SecRuleEngine On
@@ -298,6 +341,7 @@ SecRule REQUEST_METHOD "@streq GET" "id:3,phase:1,redirect:/target,status:307""#
         .unwrap();
         let catalog = RuleCatalog::new(&engine, &PluginConfig::default());
         let mut tx = engine.new_transaction();
+        record_request_fields(&mut tx);
         tx.process_uri("/", "GET", "HTTP/1.1").unwrap();
         tx.process_request_headers().unwrap();
         let result = catalog.result(&tx, true, 4);
