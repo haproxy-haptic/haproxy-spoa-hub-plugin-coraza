@@ -1,5 +1,7 @@
 # Go and Rust backend benchmark
 
+[Recorded full CRS comparison](results/786d014.md)
+
 This harness loads each release library into its own process running the same SPOA hub. A Python client sends SPOP 2.0 NOTIFY frames over a persistent Unix socket and checks every ACK. Both plugins load the embedded recommended configuration, setup file and complete OWASP CRS 4.25.0. Two small extra rules check that the request and response phases actually inspect bodies.
 
 Build the libraries from the same plugin revision. Separate target directories preserve both artifacts.
