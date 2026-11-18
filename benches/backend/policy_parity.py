@@ -81,6 +81,23 @@ SecRule ARGS:a "@streq green" "id:10101,phase:2,deny,status:409"
 SecMarker PASS
 SecRule ARGS:b "@streq green" "id:10102,phase:2,deny,status:410"
 """
+    matched_vars = {
+        'plural-reset': """SecRule REQUEST_METHOD "@streq GET" "id:10201,phase:1,pass"
+SecRule &MATCHED_VARS "@eq 0" "id:10202,phase:1,deny,status:409"
+""",
+        'last-scalar': """SecRule REQUEST_METHOD "@streq GET" "id:10201,phase:1,pass"
+SecRule REQUEST_URI "@streq /missing" "id:10202,phase:1,pass"
+SecRule MATCHED_VAR "@streq GET" "id:10203,phase:1,deny,status:409"
+""",
+        'chain-scoped': """SecRule REQUEST_METHOD "@streq GET" "id:10201,phase:1,deny,status:409,chain"
+SecRule REQUEST_URI "@beginsWith /catalog" "chain"
+SecRule MATCHED_VARS:REQUEST_METHOD "@streq GET" "t:none"
+""",
+        'empty-name': 'SecRule MATCHED_VAR_NAME "@rx ^$" "id:10201,phase:1,deny,status:409"',
+        'action-name': """SecAction "id:10201,phase:1,pass,setvar:'tx.name=%{MATCHED_VAR_NAME}'"
+SecRule TX:name "@streq UNKNOWN" "id:10202,phase:1,deny,status:409"
+""",
+    }
     # The HAPTIC WAF catalog inserts these SecActions before loading the CRS.
     catalog = POLICY.replace('Include @owasp_crs/*.conf', '''SecAction "id:900200,phase:1,pass,t:none,nolog,setvar:'tx.allowed_methods=GET POST OPTIONS'"
 SecAction "id:900110,phase:1,pass,t:none,nolog,setvar:'tx.inbound_anomaly_score_threshold=5',setvar:'tx.outbound_anomaly_score_threshold=4'"
@@ -114,6 +131,8 @@ SecRuleUpdateTargetById 941320 "!ARGS:comment"''')
         *(runtime_exclusion(collection) for collection in ('ARGS', 'ARGS_GET', 'ARGS_POST')),
         Policy('skip-after', BASE + skip, (('query', form('a=green', 'b=red')),
                ('body', form('', 'a=green')), ('marker', form('', 'b=green')), ('get', request(query='a=green')))),
+        *(Policy('matched-vars-' + label, BASE + rules, (('get', GET), ('post', FORM)))
+          for label, rules in matched_vars.items()),
         Policy('stock-crs', POLICY, ()),
         Policy('haptic-catalog', catalog, ()),
     ]
