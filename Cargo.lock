@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "coraza-plugin"
-version = "0.12.0-rc.3"
+version = "0.12.0-rc.4"
 dependencies = [
  "chrono",
  "criterion",
