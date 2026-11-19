@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.3] - 2026-11-19
+
 - Both backends omit unscored OWASP CRS control matches from `plugin_coraza_rule_hits_total` by default. Set `include_crs_control_rule_hits = true` to restore those counters.
 
 ## [0.12.0-rc.2] - 2026-11-19
