@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use zentinel_modsec::{Transaction, engine::ruleset::RuleEngineMode};
 
+use super::audit::{AuditSession, timed};
 use super::config::Waf;
 use crate::backend::{Request, Response};
 use crate::config::PluginConfig;
@@ -21,6 +22,7 @@ struct Lease {
     tx: Transaction,
     catalog: Arc<RuleCatalog>,
     logged: usize,
+    audit: Option<Box<AuditSession>>,
 }
 
 impl Lease {
@@ -35,10 +37,15 @@ impl Lease {
 
 impl Drop for Lease {
     fn drop(&mut self) {
-        if let Err(err) = self.tx.process_logging() {
+        if let Err(err) = timed(&mut self.audit, 5, || self.tx.process_logging()) {
             log::debug!("Rust WAF logging phase failed: {err}");
         }
         self.log_new_matches();
+        if let Some(audit) = &self.audit {
+            if let Err(err) = audit.finish(&self.tx) {
+                log::error!("Rust WAF transaction audit write failed: {err}");
+            }
+        }
     }
 }
 
@@ -60,7 +67,11 @@ fn checked_metadata(value: i32, field: &str) -> zentinel_modsec::Result<u16> {
     })
 }
 
-fn request_phases(tx: &mut Transaction, request: &Request<'_>) -> zentinel_modsec::Result<()> {
+fn request_phases(
+    tx: &mut Transaction,
+    request: &Request<'_>,
+    time: &mut Option<Box<AuditSession>>,
+) -> zentinel_modsec::Result<()> {
     tx.set_client_addr(
         request.src_ip,
         checked_metadata(request.src_port, "source port")?,
@@ -78,29 +89,36 @@ fn request_phases(tx: &mut Transaction, request: &Request<'_>) -> zentinel_modse
     for (key, value) in headers(request.headers) {
         tx.add_request_header_bytes(key, value)?;
     }
-    tx.process_request_headers()?;
+    timed(time, 1, || tx.process_request_headers())?;
     if !tx.has_intervention() && !request.body.is_empty() {
         tx.write_request_body(request.body)?;
     }
     if !tx.has_intervention() {
-        tx.process_request_body()?;
+        timed(time, 2, || tx.process_request_body())?;
     }
     Ok(())
 }
 
-fn response_phases(tx: &mut Transaction, response: &Response<'_>) -> zentinel_modsec::Result<()> {
+fn response_phases(
+    tx: &mut Transaction,
+    response: &Response<'_>,
+    time: &mut Option<Box<AuditSession>>,
+) -> zentinel_modsec::Result<()> {
     for (key, value) in headers(response.headers) {
         tx.add_response_header_bytes(key, value)?;
     }
-    tx.process_response_headers_with_status(
-        checked_metadata(response.status, "HTTP status")?,
-        response.version,
-    )?;
+    let status = checked_metadata(response.status, "HTTP status")?;
+    if let Some(t) = time {
+        t.response(status);
+    }
+    timed(time, 3, || {
+        tx.process_response_headers_with_status(status, response.version)
+    })?;
     if !tx.has_intervention() && !response.body.is_empty() {
         tx.write_response_body(response.body)?;
     }
     if !tx.has_intervention() {
-        tx.process_response_body()?;
+        timed(time, 4, || tx.process_response_body())?;
     }
     Ok(())
 }
@@ -115,17 +133,19 @@ pub(crate) fn evaluate_request(
     request.validate()?;
     let mut tx = waf.engine.new_transaction_with_id(request.tx_id);
     waf.catalog.configure_reporting(&mut tx);
+    tx.set_record_audit_messages(waf.audit.is_some());
     let mut lease = Lease {
         tx,
         catalog: Arc::clone(&waf.catalog),
         logged: 0,
+        audit: waf.audit.as_ref().map(AuditSession::start),
     };
     if waf.engine.ruleset().engine_mode() == RuleEngineMode::Off {
         let allowed = Evaluation::allow();
         cache.record(&allowed, true, false);
         return Ok(allowed);
     }
-    let processed = request_phases(&mut lease.tx, &request);
+    let processed = request_phases(&mut lease.tx, &request, &mut lease.audit);
     lease.log_new_matches();
     let mut failed = processed.is_err();
     let mut verdict = match processed {
@@ -171,7 +191,7 @@ pub(crate) fn evaluate_response(
         cache.missing_response();
         return Ok(Evaluation::error(503));
     };
-    let processed = response_phases(&mut lease.tx, &response);
+    let processed = response_phases(&mut lease.tx, &response, &mut lease.audit);
     let failed = processed.is_err();
     let verdict = match processed {
         Err(err) => {

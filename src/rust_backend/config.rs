@@ -2,10 +2,10 @@
 mod diagnostics;
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt, fs,
     path::{Component, Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use flate2::read::GzDecoder;
@@ -19,12 +19,14 @@ use zentinel_modsec::{
     parser::{Directive, OperatorName, Parser, ParserHost},
 };
 
+use super::audit::{AuditConfig, AuditWriter, RuleSources};
 use super::transaction::RuleCatalog;
 use crate::config::PluginConfig;
 
 pub(crate) struct Waf {
     pub(super) engine: ModSecurity,
     pub(super) catalog: Arc<RuleCatalog>,
+    pub(super) audit: Option<Arc<AuditWriter>>,
 }
 impl fmt::Debug for Waf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -79,11 +81,30 @@ pub(crate) fn create_waf(
         limits.push_str(&format!("SecResponseBodyLimit {resp_body_limit}\n"));
     }
     parser.parse(&limits).map_err(|e| e.to_string())?;
+    let audit_config = files.audit.lock().unwrap().clone();
+    audit_config
+        .validate(parser.directives())
+        .map_err(|e| e.to_string())?;
+    let sources = if audit_config.has_target() {
+        RuleSources::collect(
+            parser.directives(),
+            directives,
+            &files.sources.lock().unwrap(),
+            |path| files.logical_message(path),
+        )?
+    } else {
+        RuleSources::default()
+    };
     let engine = compile(parser, &files).map_err(|e| files.logical_message(&e.to_string()))?;
+    let audit = audit_config.open(&engine, sources)?.map(Arc::new);
     let catalog = Arc::new(RuleCatalog::new(&engine, config));
     #[cfg(test)]
     ACTIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    Ok(Waf { engine, catalog })
+    Ok(Waf {
+        engine,
+        catalog,
+        audit,
+    })
 }
 
 pub(crate) fn validate_directives(directives: &str, staged_files: &str) -> Vec<Diagnostic> {
@@ -91,7 +112,10 @@ pub(crate) fn validate_directives(directives: &str, staged_files: &str) -> Vec<D
         Ok(files) => files,
         Err(message) => return vec![Diagnostic::error(0, 0, message)],
     };
-    match parse(directives, None, &files).and_then(|parser| compile(parser, &files)) {
+    match parse(directives, None, &files).and_then(|parser| {
+        files.audit.lock().unwrap().validate(parser.directives())?;
+        compile(parser, &files)
+    }) {
         Ok(_) => Vec::new(),
         Err(error) => {
             let (line, column) = if let Error::Parse { location, .. } = &error {
@@ -189,6 +213,8 @@ const ASSETS: &[u8] = include_bytes!("../../resources/crs/rules.tar.gz");
 /// references resolve through the engine's ordinary file loader. Staged names
 /// are projected under a private directory and never written to their OS path.
 struct RuleFiles {
+    sources: Mutex<HashMap<PathBuf, String>>,
+    audit: Mutex<AuditConfig>,
     embedded: OnceLock<Result<TempDir, String>>,
     staged: Option<TempDir>,
     staged_names: BTreeMap<PathBuf, PathBuf>,
@@ -228,6 +254,8 @@ impl RuleFiles {
             Some(root)
         };
         Ok(Arc::new(Self {
+            sources: Mutex::default(),
+            audit: Mutex::default(),
             embedded: OnceLock::new(),
             staged,
             staged_names,
@@ -369,38 +397,38 @@ impl ParserHost for RuleFiles {
         Ok(path)
     }
 
+    fn parsed_file(&self, path: &Path, contents: &str) {
+        if !self.admission {
+            self.sources
+                .lock()
+                .unwrap()
+                .insert(path.to_owned(), contents.to_owned());
+        }
+    }
+
     fn unknown_directive(
         &self,
         name: &str,
         argument: &str,
         location: &SourceLocation,
     ) -> zentinel_modsec::Result<()> {
-        // The embedded recommended policy sets these Coraza defaults. Audit
-        // output is owned by the plugin, which never opens Coraza audit files.
-        let bundled = self
-            .embedded
-            .get()
-            .and_then(|v| v.as_ref().ok())
-            .is_some_and(|root| {
-                location.file.as_deref() == Some(&root.path().join("@coraza.conf-recommended"))
-            });
-        if bundled
-            && matches!(
-                name.to_ascii_lowercase().as_str(),
-                "secauditengine"
-                    | "secauditlogrelevantstatus"
-                    | "secauditlogparts"
-                    | "secauditlogtype"
-                    | "secauditlogformat"
-                    | "secdatadir"
-            )
+        if self
+            .audit
+            .lock()
+            .unwrap()
+            .set(name, argument)
+            .map_err(|e| Error::parse(e, location.to_string()))?
         {
             return Ok(());
         }
-        if name.eq_ignore_ascii_case("SecRxPreFilter")
-            && ["On", "Off"]
-                .iter()
-                .any(|value| argument.eq_ignore_ascii_case(value))
+        if name.eq_ignore_ascii_case("SecDataDir")
+            && self
+                .embedded
+                .get()
+                .and_then(|v| v.as_ref().ok())
+                .is_some_and(|root| {
+                    location.file.as_deref() == Some(&root.path().join("@coraza.conf-recommended"))
+                })
         {
             return Ok(());
         }

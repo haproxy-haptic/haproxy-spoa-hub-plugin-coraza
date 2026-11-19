@@ -12,10 +12,12 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["go-backend"]
 go-backend = []
-rust-backend = ["dep:zentinel-modsec", "dep:tempfile", "dep:tar", "dep:flate2", "dep:sha2", "dep:tracing", "dep:tracing-subscriber"]
+rust-backend = ["dep:zentinel-modsec", "dep:tempfile", "dep:tar", "dep:flate2", "dep:sha2", "dep:tracing", "dep:tracing-subscriber", "dep:regex", "dep:chrono"]
 
 [dependencies]
-zentinel-modsec = { git = "https://github.com/phihos/zentinel-modsec", rev = "b206f2fb39d854628e755f95a0afdfb2d7ee1576", default-features = false, optional = true }
+chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
+regex = { version = "1", optional = true }
+zentinel-modsec = { git = "https://github.com/phihos/zentinel-modsec", rev = "1e5f87615d7e87b6ba71ec5df60787fc4c625ddb", default-features = false, optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"], optional = true }
 tempfile = { version = "3", optional = true }

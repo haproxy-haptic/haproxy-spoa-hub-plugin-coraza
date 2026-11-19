@@ -29,7 +29,18 @@ The release workflow builds and signs both libraries for each supported architec
 
 Both plugins load OWASP CRS 4.25.0 and use Coraza's multiphase evaluation order. A phase-2 rule that inspects only the request method can block during phase 1. A rule that counts `&ARGS` counts query arguments during request-header inspection and form arguments during body inspection. The hub reports up to five distinct matched input fields, including their query or body origin. The [policy comparison](benches/backend/README.md) runs the same requests through each plugin and compares the hub's returned variables.
 
-The Rust build compiles embedded and staged rule files in a private temporary directory. Give the hub a writable `TMPDIR`. For admission of a staged JSON Schema, include its referenced JSON files in the same staged tree. The Rust backend reports unsupported rule features during policy loading. Connector match logging is available on both builds. Policies that require Coraza-managed audit files should use Go.
+The Rust build compiles embedded and staged rule files in a private temporary directory. Give the hub a writable `TMPDIR`. For admission of a staged JSON Schema, include its referenced JSON files in the same staged tree. The Rust backend reports unsupported rule features during policy loading. Connector match logging is available on both builds. Both builds also support serial JSON transaction auditing. To log the request and response headers and rules that matched, configure the trusted policy:
+
+```apache
+SecAuditEngine RelevantOnly
+SecAuditLogParts ABFHKZ
+SecAuditLog /dev/stdout
+SecAuditLogFormat JSON
+```
+
+With `RelevantOnly`, a configured `SecAuditLogRelevantStatus` selects by response or interruption status, including a detection-only interruption. Without a status expression, a matching rule must enable audit logging. The recommended Coraza configuration supplies a status expression. `SecAuditEngine On` records every transaction.
+
+The Rust writer supports parts `ABFHKZ` and subsets. These exclude HTTP bodies. Header values, query strings, expanded rule messages and `logdata` may still contain secrets. Audit output is independent of connector match logging and its redaction settings. Use a mounted file path to keep records out of container stdout. Rust creates new files with mode `0600` by default and accepts `SecAuditLogFileMode` in octal. Admission validates the directives without creating the destination. Each Rust audit record identifies the physical source line of the rule, including rules from included files.
 
 ## Configuration
 
