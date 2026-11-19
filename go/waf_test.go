@@ -11,7 +11,7 @@ Include @coraza.conf-recommended
 Include @crs-setup.conf.example
 Include @owasp_crs/*.conf`
 
-	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
+	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128, false)
 	if err != nil {
 		t.Fatalf("createWAF failed: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestCreateWAF_InvalidDirectives(t *testing.T) {
 	directives := `SecRuleEngine On
 Include /nonexistent/path/rules.conf`
 
-	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
+	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128, false)
 	if err == nil {
 		destroyWAF(handle)
 		t.Fatal("expected error for invalid directives")
@@ -40,7 +40,7 @@ Include /nonexistent/path/rules.conf`
 
 func TestCreateWAF_MinimalDirectives(t *testing.T) {
 	directives := "SecRuleEngine On"
-	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
+	handle, rulesCount, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128, false)
 	if err != nil {
 		t.Fatalf("createWAF failed: %v", err)
 	}
@@ -59,11 +59,11 @@ func TestDestroyWAF_NonexistentHandle(t *testing.T) {
 }
 
 func TestRetiredWAFClosesAfterLastTransactionLease(t *testing.T) {
-	handle, _, err := createWAF("SecRuleEngine On", "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
+	handle, _, err := createWAF("SecRuleEngine On", "", "", 4096, 4096, 4096, false, matchedDataNone, 128, false)
 	if err != nil {
 		t.Fatalf("createWAF failed: %v", err)
 	}
-	if !retainWAF(handle) {
+	if retainWAF(handle) == nil {
 		t.Fatal("expected to retain live WAF")
 	}
 

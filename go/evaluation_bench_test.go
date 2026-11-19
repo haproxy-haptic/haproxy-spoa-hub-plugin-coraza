@@ -37,7 +37,7 @@ var benignRequest = benchRequest{
 
 func newChartWAF(tb testing.TB) uint64 {
 	tb.Helper()
-	handle, _, err := createWAF(chartDefaultDirectives, "", "", 0, 0, 0, false, matchedDataNone, 128)
+	handle, _, err := createWAF(chartDefaultDirectives, "", "", 0, 0, 0, false, matchedDataNone, 128, false)
 	if err != nil {
 		tb.Fatalf("createWAF: %v", err)
 	}
@@ -201,7 +201,7 @@ func percentiles(d []time.Duration) string {
 		sum/time.Duration(len(d)), at(0.5), at(0.9), at(0.99))
 }
 
-func benignMatchedRules(b *testing.B) []types.MatchedRule {
+func benignMatchedRules(b testing.TB) []types.MatchedRule {
 	handle := newChartWAF(b)
 	b.Cleanup(func() { destroyWAF(handle) })
 	inst, err := getWAF(handle)
@@ -209,6 +209,7 @@ func benignMatchedRules(b *testing.B) []types.MatchedRule {
 		b.Fatal(err)
 	}
 	tx := inst.waf.NewTransaction()
+	b.Cleanup(func() { tx.ProcessLogging(); _ = tx.Close() })
 	tx.ProcessConnection("127.0.0.1", 40000, "127.0.0.1", 8080)
 	tx.ProcessURI("/", "GET", "HTTP/1.1")
 	for _, h := range benignRequest.headers {
@@ -233,7 +234,13 @@ func BenchmarkMatchedRulesJSON(b *testing.B) {
 	b.Run("append", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			_ = appendMatchedRulesJSON(make([]byte, 0, 24*len(rules)+3), rules)
+			_ = appendMatchedRulesJSON(make([]byte, 0, 24*len(rules)+3), rules, true, 0)
+		}
+	})
+	b.Run("append-filtered", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = appendMatchedRulesJSON(nil, rules, false, 0)
 		}
 	})
 }

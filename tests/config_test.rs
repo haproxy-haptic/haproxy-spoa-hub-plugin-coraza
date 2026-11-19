@@ -15,6 +15,7 @@ fn test_default_config() {
     assert_eq!(config.transaction_ttl_ms, 10000);
     assert_eq!(config.max_cached_transactions, 1024);
     assert!(!config.rule_match_log);
+    assert!(!config.include_crs_control_rule_hits);
     assert_eq!(
         config.matched_data_log,
         coraza_plugin::config::MatchedDataLog::None
@@ -88,6 +89,10 @@ fn test_config_schema_valid_json() {
     assert!(parsed["properties"]["transaction_ttl_ms"].is_object());
     assert!(parsed["properties"]["max_cached_transactions"].is_object());
     assert_eq!(parsed["properties"]["default_waf"]["type"], "boolean");
+    assert_eq!(
+        parsed["properties"]["include_crs_control_rule_hits"]["default"],
+        false
+    );
     assert_eq!(parsed["additionalProperties"], false);
 }
 

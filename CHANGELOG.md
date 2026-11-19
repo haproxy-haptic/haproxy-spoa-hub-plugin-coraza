@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Both backends omit unscored OWASP CRS control matches from `plugin_coraza_rule_hits_total` by default. Set `include_crs_control_rule_hits = true` to restore those counters.
+
 ## [0.12.0-rc.2] - 2026-11-19
 
 - Rust now honors `SecRxPreFilter`, resolves transaction time variables, and follows Go's request URI normalization, literal regex braces and custom policy admission for component signatures and default actions.

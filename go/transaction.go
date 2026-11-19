@@ -7,6 +7,7 @@ import "C"
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,15 +42,17 @@ type headerPair struct {
 }
 
 // matchedRulesJSON serializes matched rules to the compact JSON array
-// ([{"i":<rule id>,"s":<severity 0-7>}, ...]) handed across the FFI for
-// per-rule metrics. Entries without a rule ID (administrative markers)
-// are skipped; nil is returned when nothing remains so the common
-// no-hit path allocates nothing.
-func matchedRulesJSON(matchedRules []types.MatchedRule) *C.char {
+// ([{"i":<rule id>,"s":<severity>}, ...]) used for metrics and scoring IDs.
+// A clean request with only filtered CRS control matches needs no FFI buffer.
+func matchedRulesJSON(matchedRules []types.MatchedRule, includeControls bool, verdictID int) *C.char {
 	if len(matchedRules) == 0 {
 		return nil
 	}
-	encoded := appendMatchedRulesJSON(make([]byte, 0, 24*len(matchedRules)+3), matchedRules)
+	var buf []byte
+	if includeControls {
+		buf = make([]byte, 0, 24*len(matchedRules)+3)
+	}
+	encoded := appendMatchedRulesJSON(buf, matchedRules, includeControls, verdictID)
 	if len(encoded) == 0 {
 		return nil
 	}
@@ -61,12 +64,13 @@ func matchedRulesJSON(matchedRules []types.MatchedRule) *C.char {
 // evaluation, and encoding/json took about 5x the CPU for CRS's ~60 baseline hits.
 // Severity is passed through raw: Coraza reports -1 for rules that declare
 // none (e.g. CRS reporting rules); the consumer maps those to "none".
-func appendMatchedRulesJSON(dst []byte, matchedRules []types.MatchedRule) []byte {
+func appendMatchedRulesJSON(dst []byte, matchedRules []types.MatchedRule, includeControls bool, verdictID int) []byte {
 	start := len(dst)
 	for _, mr := range matchedRules {
 		rule := mr.Rule()
 		id := rule.ID()
-		if id <= 0 {
+		severity := rule.Severity()
+		if id <= 0 || (!includeControls && id != verdictID && severity == -1 && slices.Contains(rule.Tags(), "OWASP_CRS")) {
 			continue
 		}
 		if len(dst) == start {
@@ -77,7 +81,7 @@ func appendMatchedRulesJSON(dst []byte, matchedRules []types.MatchedRule) []byte
 		dst = append(dst, `{"i":`...)
 		dst = strconv.AppendInt(dst, int64(id), 10)
 		dst = append(dst, `,"s":`...)
-		dst = strconv.AppendInt(dst, int64(rule.Severity()), 10)
+		dst = strconv.AppendInt(dst, int64(severity), 10)
 		dst = append(dst, '}')
 	}
 	if len(dst) == start {
@@ -212,16 +216,16 @@ func matchedVarName(matchedRules []types.MatchedRule, preferRuleID int) string {
 	return strings.Join(names, ",")
 }
 
-func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool, matchedDataMaxBytes int) C.coraza_result_t {
-	result := allowResult()
+func buildResult(tx types.Transaction, interrupted bool, exposeMatchedData bool, matchedDataMaxBytes int, includeControls bool) C.coraza_result_t {
+	matched := tx.MatchedRules()
+	result := buildVerdict(tx, matched, interrupted, exposeMatchedData, matchedDataMaxBytes)
+	result.rules_hit = C.int(len(matched))
+	result.matched_rules = matchedRulesJSON(matched, includeControls, int(result.rule_id))
+	return result
+}
 
-	matchedRules := tx.MatchedRules()
-	result.rules_hit = C.int(len(matchedRules))
-	// Serialized before the early returns below so the caller gets the
-	// full per-rule hit list on every code path (interruption, anomaly
-	// block, and plain allow) — detect-mode tuning needs the rules that
-	// fired on ALLOWED traffic most of all.
-	result.matched_rules = matchedRulesJSON(matchedRules)
+func buildVerdict(tx types.Transaction, matchedRules []types.MatchedRule, interrupted bool, exposeMatchedData bool, matchedDataMaxBytes int) C.coraza_result_t {
+	result := allowResult()
 
 	// Compute anomaly score by summing severities of disruptive-category rules.
 	// CRS assigns: CRITICAL=5, ERROR=4, WARNING=3, NOTICE=2.
@@ -392,7 +396,7 @@ func coraza_process_request(
 		result = engineErrorResult(400)
 		metricsErrors.Add(1)
 	} else {
-		result = buildResult(tx, interrupted, exposeMatchedData != 0, int(matchedDataMaxBytes))
+		result = buildResult(tx, interrupted, exposeMatchedData != 0, int(matchedDataMaxBytes), inst.includeCRSControlRuleHits)
 	}
 
 	// A disruptive action is a deny even if it has no HTTP status. Coraza's
@@ -487,7 +491,7 @@ func coraza_process_response(
 		result = engineErrorResult(502)
 		metricsErrors.Add(1)
 	} else {
-		result = buildResult(tx, interrupted, false, 0)
+		result = buildResult(tx, interrupted, false, 0, entry.includeCRSControlRuleHits)
 	}
 
 	if result.status != 0 && detectOnly != 0 && !processingError {

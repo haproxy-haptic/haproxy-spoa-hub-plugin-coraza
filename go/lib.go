@@ -105,6 +105,7 @@ func coraza_waf_new(
 	ruleMatchLog C.int,
 	matchedDataLogMode C.int,
 	matchedDataMaxBytes C.int,
+	includeCRSControlRuleHits C.int,
 ) (ret C.uint64_t) {
 	defer recoverPanic("coraza_waf_new")
 	goDirectives := C.GoStringN(directives, directivesLen)
@@ -129,6 +130,7 @@ func coraza_waf_new(
 		ruleMatchLog != 0,
 		int(matchedDataLogMode),
 		int(matchedDataMaxBytes),
+		includeCRSControlRuleHits != 0,
 	)
 	if err != nil {
 		setLastError(err)

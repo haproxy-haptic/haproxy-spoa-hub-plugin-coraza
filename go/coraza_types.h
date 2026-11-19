@@ -11,9 +11,9 @@ typedef struct {
     const char *data;
     int anomaly_score;
     int rules_hit;
-    /* Compact JSON array of every matched rule for per-rule metrics:
-       [{"i":<rule id>,"s":<severity 0-7>}, ...]. NULL when no rules
-       matched. Heap-allocated; the caller frees via coraza_free_string. */
+    /* Compact JSON array of matched rules selected for per-rule metrics:
+       [{"i":<rule id>,"s":<severity -1 or 0-7>}, ...]. NULL when no hits
+       were selected. Heap-allocated; the caller frees via coraza_free_string. */
     const char *matched_rules;
     /* Name of the request field a rule matched on, as VARIABLE or
        VARIABLE:KEY (e.g. "ARGS:q", "REQUEST_HEADERS:User-Agent"). The NAME

@@ -24,6 +24,7 @@ fn test_waf_create_with_embedded_crs() {
             0,      // rule_match_log
             0,      // matched_data_log_mode
             128,    // matched_data_max_bytes
+            0,      // include_crs_control_rule_hits
         )
     };
     assert!(handle > 0, "WAF handle should be non-zero");
@@ -51,6 +52,7 @@ fn test_waf_create_invalid_directives() {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     };
     assert_eq!(handle, 0, "should return 0 for invalid directives");
@@ -78,6 +80,7 @@ fn test_process_benign_request() {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     };
     assert!(handle > 0);
@@ -143,6 +146,7 @@ fn test_process_sql_injection() {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     };
     assert!(handle > 0);
@@ -219,6 +223,7 @@ fn test_process_sql_injection_detect_only() {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     };
     assert!(handle > 0);
@@ -300,6 +305,7 @@ fn test_process_benign_request_detect_only_is_noop() {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     };
     assert!(handle > 0);

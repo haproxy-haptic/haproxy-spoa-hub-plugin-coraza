@@ -105,6 +105,7 @@ fn main() {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     };
     assert!(handle > 0, "WAF setup failed");

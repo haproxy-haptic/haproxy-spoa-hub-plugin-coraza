@@ -106,7 +106,7 @@ func TestRejectedWAFIsRebuiltOnlyWhenItsFilesChange(t *testing.T) {
 	}
 	create := func() error {
 		t.Helper()
-		handle, _, err := createWAF("Include "+rules, "", "", 0, 0, 0, false, matchedDataNone, 0)
+		handle, _, err := createWAF("Include "+rules, "", "", 0, 0, 0, false, matchedDataNone, 0, false)
 		if err == nil {
 			destroyWAF(handle)
 		}
