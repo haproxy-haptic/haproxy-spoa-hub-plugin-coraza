@@ -76,4 +76,7 @@ jobs:
         if: github.event_name == 'push' || !inputs.dry_run
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --repo "${REPO}" --title "$GITHUB_REF_NAME" --notes-file release-notes.md artifacts/*
+        run: |
+          set --
+          case "$TAG" in *-*) set -- --prerelease ;; esac
+          gh release create "$TAG" "$@" --verify-tag --repo "${REPO}" --title "$TAG" --notes-file release-notes.md artifacts/*
