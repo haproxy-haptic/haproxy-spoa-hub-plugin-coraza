@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.4] - 2026-11-19
+
+- The Rust backend matches Go Coraza's ASCII word boundaries, XML namespace attribute classification, and parse-error reporting for malformed XML and multipart request bodies.
+- Repeated Rust policy validation reuses compiled regular expressions from the last successful validation.
+
 ## [0.12.0-rc.3] - 2026-11-19
 
 - Both backends omit unscored OWASP CRS control matches from `plugin_coraza_rule_hits_total` by default. Set `include_crs_control_rule_hits = true` to restore those counters.
