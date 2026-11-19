@@ -972,6 +972,37 @@ mod validate_tests {
         );
     }
 
+    #[test]
+    fn haptic_custom_policy_admission_matches_runtime_grammar() {
+        let plugin = CorazaPlugin::__new();
+        for (directives, accepted) in [
+            ("SecComponentSignature catalog", true),
+            ("SecComponentSignature", false),
+            (r#"SecDefaultAction "phase:1,pass,t:lowercase""#, true),
+            (
+                r#"SecDefaultAction "phase:1,pass,t:lowercase"
+SecRule REQUEST_METHOD "@streq GET" "id:10701,phase:1,pass""#,
+                false,
+            ),
+            (
+                r#"SecRule TIME_YEAR "@rx ^[0-9]{4}$" "id:10701,phase:1,pass""#,
+                true,
+            ),
+            ("SecAuditEngine Off", true),
+            ("SecRxPreFilter invalid", false),
+        ] {
+            let context = ctx_with(vec![("directives", ConfigValue::String(directives.into()))]);
+            let diagnostics = plugin.__validate(&context);
+            assert_eq!(
+                diagnostics
+                    .iter()
+                    .all(|d| d.severity != DiagnosticSeverity::Error),
+                accepted,
+                "{directives}: {diagnostics:?}"
+            );
+        }
+    }
+
     /// Regression: a plain SecLang typo (unknown directive) MUST surface
     /// as at least one Error diagnostic. This is the central property of
     /// validate() — invalid custom Coraza configs (e.g., from a HAPTIC

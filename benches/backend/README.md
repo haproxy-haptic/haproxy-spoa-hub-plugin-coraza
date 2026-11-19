@@ -43,3 +43,14 @@ python3 benches/backend/policy_parity.py \
 ```
 
 A policy that fails to start the hub or a difference in any returned SPOA field fails the comparison. Each response uses the transaction ID returned by its own backend. IDs are generated independently and are excluded from the field comparison. The JSON records binary and policy hashes, both sets of returned fields, and any differences.
+
+## Compare transaction audit logs
+
+```sh
+python3 benches/backend/audit_parity.py \
+    --hub /path/to/haproxy-spoa-hub \
+    --go target/bench-plugins/libcoraza_plugin.so \
+    --rust target/bench-plugins/libcoraza_rust_plugin.so
+```
+
+The comparison reads real JSON records from stdout and files for benign requests, checks the selected records and matches every field apart from timestamps and timings. It checks that neither request nor response body appears with parts `ABFHKZ`.

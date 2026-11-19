@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.2] - 2026-11-19
+
+- Rust now honors `SecRxPreFilter`, resolves transaction time variables, and follows Go's request URI normalization, literal regex braces and custom policy admission for component signatures and default actions.
+
+- The Rust backend supports serial JSON transaction auditing to stdout or a file with `SecAuditLogParts ABFHKZ`, including status filtering, per-rule audit controls, and phase-5 completion.
+
 ## [0.12.0-rc.1] - 2026-11-19
 
 - Choose the WAF engine with the hub plugin's `library` setting. `libcoraza_plugin.so` runs Go Coraza and remains the default. `libcoraza_rust_plugin.so` runs the Rust engine with its Rust libinjection detector. Both libraries ship for Linux amd64, arm64 and armv7.

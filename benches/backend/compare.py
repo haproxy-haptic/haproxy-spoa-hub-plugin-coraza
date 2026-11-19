@@ -29,13 +29,13 @@ SecRule RESPONSE_BODY "@streq benchmark-response-control" "id:10102,phase:4,deny
 """
 
 
-def request(method='GET', query='', media=None, body=b''):
+def request(method='GET', query='', media=None, body=b'', *, path='/catalog/search'):
     headers = 'Host: shop.example.com\r\nUser-Agent: BackendBench/1.0\r\nAccept: */*\r\n'
     if media:
         headers += f'Content-Type: {media}\r\nContent-Length: {len(body)}\r\n'
     return message('check-request', {
         'src-ip': '192.0.2.1', 'src-port': 42000, 'dst-ip': '192.0.2.2', 'dst-port': 443,
-        'method': method, 'path': '/catalog/search', 'query': query, 'version': 'HTTP/1.1',
+        'method': method, 'path': path, 'query': query, 'version': 'HTTP/1.1',
         'headers': headers.encode(), 'body': body, 'body-mode': 'buffered' if media else 'none',
         'body-complete': True,
     })

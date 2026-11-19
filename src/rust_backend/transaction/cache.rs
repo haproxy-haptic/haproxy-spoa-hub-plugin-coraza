@@ -203,6 +203,7 @@ mod tests {
             tx: engine.new_transaction_with_id(marker),
             catalog: Arc::new(RuleCatalog::new(engine, &PluginConfig::default())),
             logged: 0,
+            audit: None,
         }
     }
 

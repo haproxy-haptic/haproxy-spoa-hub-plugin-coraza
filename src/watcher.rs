@@ -264,6 +264,9 @@ mod tests {
     fn fires_once_when_the_rule_set_changes() {
         let dir = tempdir();
         write(dir.path(), "a.conf", "a");
+        // Publish one complete rule file, just like the connector's writer.
+        // A create followed by a write can expose two settled fingerprints.
+        write(dir.path(), "b.pending", "b");
         let calls = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&calls);
 
@@ -277,7 +280,7 @@ mod tests {
             },
         );
         thread::sleep(Duration::from_millis(150));
-        write(dir.path(), "b.conf", "b");
+        std::fs::rename(dir.path().join("b.pending"), dir.path().join("b.conf")).unwrap();
         thread::sleep(Duration::from_millis(300));
         watcher.stop();
 

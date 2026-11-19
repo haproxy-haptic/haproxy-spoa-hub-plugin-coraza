@@ -164,6 +164,17 @@ SecRule REQUEST_URI "@streq /missing" "t:none"
           for label, pattern in (('anchors', '^blue$'), ('multiline', '(?m)^blue$'), ('dot', '^red.*green$'))),
         *(Policy('matched-vars-' + label, BASE + rules, (('get', GET), ('post', FORM)))
           for label, rules in matched_vars.items()),
+        Policy('calendar-year', BASE + 'SecRule TIME_YEAR "@rx ^[0-9]{4}$" "id:10701,phase:1,deny,status:409"',
+               (('get', GET),)),
+        Policy('uri-representations', BASE + """SecRule REQUEST_URI "@contains café" "id:10701,phase:1,pass,severity:NOTICE"
+SecRule REQUEST_URI_RAW "@contains café" "id:10702,phase:1,pass,severity:INFO"
+""", (('literal', request(path='/catalog/café')), ('encoded', request(path='/catalog/caf%C3%A9')),
+      ('ascii', request(path='/catalog/edition-2')))),
+        *(Policy('literal-brace-prefilter-' + mode.lower(),
+                 BASE + f'SecRxPreFilter {mode}\nSecRule ARGS:note "@rx ^edition{{ok}}$" "id:10701,phase:2,deny,status:409"',
+                 (('match', form('', 'note=edition%7Bok%7D')), ('miss', form('', 'note=second'))))
+          for mode in ('On', 'Off')),
+        Policy('custom-audit-off', BASE + 'SecAuditEngine Off', (('get', GET),)),
         Policy('stock-crs', POLICY, ()),
         Policy('haptic-catalog', catalog, ()),
     ]

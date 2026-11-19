@@ -53,10 +53,9 @@ impl<S: Subscriber> Layer<S> for Unsupported {
             return;
         }
         // ParserHost checked every external directive. Rule log flags are
-        // consumed by the connector's catalog. Disabling the absent audit
-        // sink is effective. Coraza 3.8.1's initcol.Evaluate is itself empty.
+        // consumed by the connector's catalog. The transaction writer observes audit controls directly. Coraza
+        // 3.8.1's initcol.Evaluate is itself empty.
         if fields.feature == "directive"
-            || (fields.feature == "ctl" && fields.name.eq_ignore_ascii_case("auditEngine=Off"))
             || (fields.feature == "action"
                 && matches!(
                     fields.name.as_str(),
