@@ -29,6 +29,7 @@ SecRule ARGS_POST:marker "@streq two" "id:503,phase:2,pass,auditlog,msg:'marker'
 ''',
     'status': BASE + '''
 SecAuditLogRelevantStatus "^(403|418|503)$"
+SecAuditLogFileMode 04700
 SecRule ARGS_GET:kind "@streq books" "id:504,phase:1,pass,log,msg:'books'"
 SecRule ARGS_GET:kind "@streq tea" "id:505,phase:1,deny,status:418,nolog"
 ''',
@@ -84,6 +85,8 @@ def run(binary, plugin, directory, policy, stdout):
                     'body': b'NONPUBLIC-BODY-response',
                 }))
                 check(resp, prefix='resp_')
+    if 'SecAuditLogFileMode 04700' in policy:
+        assert target.stat().st_mode & 0o7000 == 0, 'Go fs.FileMode 04700 has no set-ID flag'
     source = directory / 'hub.log' if stdout else target
     rows = []
     for line in source.read_text().splitlines():
