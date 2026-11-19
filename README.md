@@ -10,7 +10,7 @@ The default build uses Go Coraza and links it into the plugin as a C archive. It
 cargo build --locked --release --target-dir target/go
 ```
 
-For the Rust engine, use Rust 1.94.1 or newer. This build uses the pinned [zentinel-modsec fork](https://github.com/phihos/zentinel-modsec) and its Rust libinjection detector. It builds without a Go toolchain.
+For the Rust engine, use Rust 1.94.1 or newer. This build uses the pinned [HAPTIC zentinel-modsec engine](https://github.com/haproxy-haptic/zentinel-modsec) and its Rust libinjection detector. It builds without a Go toolchain.
 
 ```sh
 cargo build --locked --release --no-default-features --features rust-backend --target-dir target/rust
