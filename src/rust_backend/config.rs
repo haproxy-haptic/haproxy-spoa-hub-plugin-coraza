@@ -108,6 +108,15 @@ pub(crate) fn create_waf(
 }
 
 pub(crate) fn validate_directives(directives: &str, staged_files: &str) -> Vec<Diagnostic> {
+    static PREVIOUS: Mutex<Option<ModSecurity>> = Mutex::new(None);
+    validate_with_previous(directives, staged_files, &PREVIOUS)
+}
+
+fn validate_with_previous(
+    directives: &str,
+    staged_files: &str,
+    previous: &Mutex<Option<ModSecurity>>,
+) -> Vec<Diagnostic> {
     let files = match RuleFiles::new(staged_files, true) {
         Ok(files) => files,
         Err(message) => return vec![Diagnostic::error(0, 0, message)],
@@ -116,7 +125,16 @@ pub(crate) fn validate_directives(directives: &str, staged_files: &str) -> Vec<D
         files.audit.lock().unwrap().validate(parser.directives())?;
         compile(parser, &files)
     }) {
-        Ok(_) => Vec::new(),
+        Ok(engine) => {
+            // The engine cache holds weak references to compiled regexes. Retain
+            // one successful generation so the next compilation can reuse them.
+            let retired = previous
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .replace(engine);
+            drop(retired);
+            Vec::new()
+        }
         Err(error) => {
             let (line, column) = if let Error::Parse { location, .. } = &error {
                 let mut fields = location.rsplit(':');
@@ -442,6 +460,87 @@ impl ParserHost for RuleFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validation_retains_only_the_last_successful_generation() {
+        let previous = Mutex::new(None);
+        let validate = |input| validate_with_previous(input, "", &previous);
+        assert!(validate(r#"SecRule REQUEST_METHOD "@rx ^GET$" "id:1,phase:1,pass""#).is_empty());
+        let operator = {
+            let guard = previous.lock().unwrap();
+            let rules = guard
+                .as_ref()
+                .unwrap()
+                .ruleset()
+                .rules_for_phase(Phase::RequestHeaders);
+            Arc::downgrade(&rules[0].operator)
+        };
+        assert!(!validate("SecUnknown bad").is_empty());
+        assert!(operator.upgrade().is_some());
+        assert!(validate("SecRuleEngine On").is_empty());
+        assert!(operator.upgrade().is_none());
+    }
+
+    #[test]
+    fn word_assertions_and_namespace_attributes_match_coraza() {
+        let files = RuleFiles::new("", false).unwrap();
+        let directives = r#"SecRuleEngine On
+SecRule REQUEST_HEADERS:Label "@rx \bword\b" "id:1,phase:1,pass"
+SecRule REQUEST_HEADERS:Label "@detectXSS" "id:2,phase:1,pass""#;
+        let engine = compile(parse(directives, None, &files).unwrap(), &files).unwrap();
+        for (value, expected) in [
+            ("éword", vec!["1"]),
+            ("wordé", vec!["1"]),
+            ("sword", vec![]),
+            (r#"<doc xmlns:meta="urn:example"/>"#, vec![]),
+            (r#"<doc xmlns="urn:example"/>"#, vec!["2"]),
+            (
+                r#"<doc xmlns:meta="urn:example" style="color: red"/>"#,
+                vec!["2"],
+            ),
+        ] {
+            let mut tx = engine.new_transaction();
+            tx.process_uri("/", "GET", "HTTP/1.1").unwrap();
+            tx.add_request_header("Label", value).unwrap();
+            tx.process_request_headers().unwrap();
+            assert_eq!(tx.matched_rules(), expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn request_body_parse_errors_reach_phase_two() {
+        let files = RuleFiles::new("", false).unwrap();
+        let directives = r#"Include @coraza.conf-recommended
+SecRequestBodyAccess On
+SecRuleEngine DetectionOnly"#;
+        let engine = compile(parse(directives, None, &files).unwrap(), &files).unwrap();
+        let multipart = "multipart/form-data; boundary=form";
+        for (mime, body, error) in [
+            ("text/xml", r#"<a x=\"1\">t</a>"#, true),
+            ("text/xml", r#"<a x="1">t</a>"#, false),
+            ("text/xml", "<a x=valid-name>t</a>", false),
+            (multipart, "--form--\n", true),
+            (multipart, "--form--\r\n", false),
+            (multipart, "--form--", false),
+            (
+                multipart,
+                "--form\nContent-Disposition: form-data; name=a\n\nx\n--form--\n",
+                false,
+            ),
+        ] {
+            let mut tx = engine.new_transaction();
+            tx.process_uri("/", "POST", "HTTP/1.1").unwrap();
+            tx.add_request_header("Content-Type", mime).unwrap();
+            tx.process_request_headers().unwrap();
+            tx.write_request_body(body.as_bytes()).unwrap();
+            tx.process_request_body().unwrap();
+            assert_eq!(
+                tx.matched_rules().iter().any(|id| id == "200002"),
+                error,
+                "{body:?}"
+            );
+        }
+    }
 
     #[test]
     fn staged_globs_shadow_os_files_and_find_nested_phrase_data() {
