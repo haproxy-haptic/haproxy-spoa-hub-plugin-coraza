@@ -30,6 +30,8 @@ All artifacts are published automatically by CI when you push a version tag.
 - Generates per-file `.sha256` sidecars and a combined `SHA256SUMS`
 - Creates a GitHub release with all artifacts attached
 
+Each architecture supplies two libraries. Install `libcoraza_plugin-<arch>-glibc2.36.so` as `libcoraza_plugin.so` and `libcoraza_rust_plugin-<arch>-glibc2.36.so` as `libcoraza_rust_plugin.so` so the hub configuration can select either engine.
+
 To exercise build, signing, and verification without publishing, run the
 `release` workflow manually with `dry_run` enabled.
 

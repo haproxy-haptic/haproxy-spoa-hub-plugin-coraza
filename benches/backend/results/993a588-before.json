@@ -1,0 +1,529 @@
+{
+  "binary_sha256": {
+    "hub": "8654587cfc720a157cb419c588a9c192a9ea8a314763282405d7204b263821ae",
+    "go": "e998de692fdcef5ded8f1ac2fd15d0a2e02022ab87d212406a0fb1dc9c928ab9",
+    "rust": "e2397d218ecf28600dfa834ef8fd53fef7335bd144ea5d7132811e563a0b5f25"
+  },
+  "policy_sha256": {
+    "phase-winner": "3f8960cf7fa58ef6e4cda96c81aa6b9368e517c862731cd1fe6e5ec203ae9865",
+    "count-two": "ce8fb03e85151fd269669f3b817ff35b16410f7d361ba3e5b2a2d14452c3307c",
+    "count-one": "0761ac9ed84d3059dfca7c6ddc03d410e550dcf7ce617200b99bd90b281968b4",
+    "excluded-count": "6417d4fad3e2f088dd6af23237b925a68a8f3af5b43fd61ea1d372344cb59101",
+    "names-count": "7105f72597d5fe595203c7d50c73c02915e4864f9d4b7c185f6e0f1cc38a458e",
+    "merged-exclusion": "830391ac6149ce1d97faa9f565e7b29686ea8416a0bc9698c02f483082e6d7d0",
+    "origin-and-case": "6a0c46004046795c9a3f587db4a1bd0b66ac18776ff75149b7446cd12661bfd7",
+    "json-names": "b207e7ae87787b69ecf542329f211b1f713ba76169ae846e66d38a1a6b1f7786",
+    "multiple-targets": "4f8faa050319fd2cb1d86752e6e61d8ca5cf74638c7e5efceb29fd209bf8d8dd",
+    "chain": "dc8cd78c67813f3abd8a09d49752733df8664bdadb336f3044f1407d5b13d26d",
+    "action-count": "ab89d62baeeb4e59c8207027344a3c20be16893de17362f6703c57b3a548ce58",
+    "chain-score": "da1bc6e3828c8b17e404824751314f7b1483f359cc383b1f6a54281d587743cf",
+    "response-phase-winner": "5cf47b5ead5b072f9ffbdcc5187746840a9ba56c542ea0fb4285f4f5944cff93",
+    "response-chain": "bd282dc0cc810239b36145781b81159ee08a1faec64e9f4579f6556e5cd47ee5",
+    "runtime-exclusion-args": "f21f11e435b4ca7277d95f7fd986e7d0070496f58a10ca0b26605c9fb6889a82",
+    "runtime-exclusion-args_get": "04645ddccf90365a4e284a2e6d9832fa28a721359594a2ff5cb4b91b66f06325",
+    "runtime-exclusion-args_post": "f03c8042be915ac73e1c7a0018eb896079cda34b0793549b32a74b3ad8a58f2b",
+    "skip-after": "4128df8edafbfa0f78e21380217a019f9b8bc86ca17986605cf278b3525a35f0",
+    "pending-skip-earlier": "8bc1eefe124bcca37eaf73113dfe00d5f855801d396336fd97a57e74cd58ca99",
+    "pending-skip-absent": "55b5f6d59288067f85b3e2cabb667ea45b563e39c3617fe48773d57aa237dca5",
+    "marker-ordinary": "a458aabc2a6d86f19691ac0d1dada25d4bb7e94c812a89acf1415bc1874d1757",
+    "marker-skip-target": "f7e85680f725d23effabfffb6fe3b5ec5dd91b02d96594069e54708c97509dd0",
+    "marker-after-target": "edb9566a4bca2763c8de9713ea669401cd16cd7011efac7196b56c77424f28b1",
+    "marker-inside-chain": "c49bc3bb6c3124d88a9aea71d8f9177f3bb42ae3832aa8ab28f9fbb2b1f9154e",
+    "regex-literal-operand": "8397558ef3bf798bdcef12e1d033ab938d0040e9bbd2f77cd315f932dfa54e66",
+    "regex-anchors": "16a4b0579cfa3ee759f63a3eaca05bd801097e2f50441f11be95e57e014f980c",
+    "regex-multiline": "cca5d09085f43fe0fdc8744f37182b4c32796e7aab8859d7f81789991b56c8de",
+    "regex-dot": "8fe24ffdeb5aac49058f6c8d3b4d30c72ccb1ece29070e464853546fe7c853b8",
+    "matched-vars-plural-reset": "28cb2c6a5fd2d9105a72cd3ab22f27b782f83b34e604a6e03b733184c2611bda",
+    "matched-vars-last-scalar": "c51a78d6709726dcc643a72de1b90db0ca747d7ae93ba9c3b808791189c6dc45",
+    "matched-vars-chain-scoped": "7b5257c33445139863f1536ff2158b32e435f24f76820bf263d1b87c3aef7793",
+    "matched-vars-empty-name": "b217ffd5e910474082f69050907b9a459cff31042dd0a385a89f29db0ecbd17f",
+    "matched-vars-action-name": "dad85f211c9f2ce15d94c25bf4f7c3aef0c9233f7d4b9a42244ae765ca2d54ff",
+    "stock-crs": "0059d196bc7121828456f2579659c3dc16c52588a85462a721486c696fe7f8f3",
+    "haptic-catalog": "f50023f48a76c9ce7ade01bb7d3406bf2473aeb760f4aa97bf272257fbfea45b"
+  },
+  "checked_acks": 97,
+  "startup_errors": {
+    "go": {},
+    "rust": {
+      "regex-literal-operand": "hub exited (1): {\"timestamp\":\"2026-11-18T22:58:51.161582Z\",\"level\":\"ERROR\",\"message\":\"failed to load plugin\",\"error\":\"plugin 'coraza' config validation failed: configuration error: rule 10602: unsupported or invalid Rx operator\",\"target\":\"haproxy_spoa_hub::plugin_loader\"}\nError: no plugins loaded successfully \u2014 nothing to do\n"
+    }
+  },
+  "differences": {
+    "phase-winner/post": {
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD",
+        "rust": "REQUEST_URI"
+      },
+      "coraza.rule_id": {
+        "go": 10101,
+        "rust": 10102
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 410
+      }
+    },
+    "count-two/split": {
+      "coraza.action": {
+        "go": "allow",
+        "rust": "deny"
+      },
+      "coraza.matched_var": {
+        "go": null,
+        "rust": "ARGS"
+      },
+      "coraza.rule_id": {
+        "go": 0,
+        "rust": 10101
+      },
+      "coraza.rules_hit": {
+        "go": 0,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 0,
+        "rust": 409
+      }
+    },
+    "count-one/split": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "ARGS_GET",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10101,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 0
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "count-one/body-only": {
+      "coraza.matched_var": {
+        "go": "ARGS_POST",
+        "rust": "ARGS"
+      }
+    },
+    "excluded-count/split": {
+      "coraza.matched_var": {
+        "go": "ARGS_POST",
+        "rust": "ARGS"
+      }
+    },
+    "excluded-count/body-only": {
+      "coraza.matched_var": {
+        "go": "ARGS_POST",
+        "rust": "ARGS"
+      }
+    },
+    "names-count/split": {
+      "coraza.action": {
+        "go": "allow",
+        "rust": "deny"
+      },
+      "coraza.matched_var": {
+        "go": null,
+        "rust": "ARGS_NAMES"
+      },
+      "coraza.rule_id": {
+        "go": 0,
+        "rust": 10101
+      },
+      "coraza.rules_hit": {
+        "go": 0,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 0,
+        "rust": 409
+      }
+    },
+    "multiple-targets/query": {
+      "coraza.matched_var": {
+        "go": "ARGS_GET:a,ARGS_GET:b,ARGS_GET:c",
+        "rust": "ARGS_GET:a"
+      }
+    },
+    "multiple-targets/mixed": {
+      "coraza.matched_var": {
+        "go": "ARGS_GET:b",
+        "rust": "ARGS_POST:a"
+      }
+    },
+    "multiple-targets/body": {
+      "coraza.matched_var": {
+        "go": "ARGS_POST:a,ARGS_POST:b,ARGS_POST:c",
+        "rust": "ARGS_POST:a"
+      }
+    },
+    "action-count/query": {
+      "coraza.matched_var": {
+        "go": "ARGS_GET:a,ARGS_GET:b",
+        "rust": "ARGS_GET:a"
+      }
+    },
+    "action-count/mixed": {
+      "coraza.matched_var": {
+        "go": "ARGS_GET:a,ARGS_POST:b",
+        "rust": "ARGS_GET:a"
+      },
+      "coraza.rules_hit": {
+        "go": 3,
+        "rust": 2
+      }
+    },
+    "chain-score/duplicate": {
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD,ARGS_GET:label,ARGS_POST:label",
+        "rust": "REQUEST_METHOD,ARGS_GET:label"
+      },
+      "coraza.rules_hit": {
+        "go": 3,
+        "rust": 2
+      }
+    },
+    "chain-score/distinct": {
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD,ARGS_GET:label,ARGS_POST:label,ARGS_POST:other",
+        "rust": "REQUEST_METHOD,ARGS_GET:label"
+      },
+      "coraza.rules_hit": {
+        "go": 3,
+        "rust": 2
+      }
+    },
+    "response-phase-winner/get-response": {
+      "coraza.resp_rule_id": {
+        "go": 10101,
+        "rust": 10102
+      },
+      "coraza.resp_status": {
+        "go": 409,
+        "rust": 410
+      }
+    },
+    "runtime-exclusion-args_get/query": {
+      "coraza.action": {
+        "go": "allow",
+        "rust": "deny"
+      },
+      "coraza.matched_var": {
+        "go": null,
+        "rust": "ARGS_GET:a,REQUEST_METHOD"
+      },
+      "coraza.rule_id": {
+        "go": 0,
+        "rust": 10101
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 2
+      },
+      "coraza.status": {
+        "go": 0,
+        "rust": 409
+      }
+    },
+    "runtime-exclusion-args_get/included-body": {
+      "coraza.matched_var": {
+        "go": "ARGS_POST:b,REQUEST_METHOD",
+        "rust": "ARGS_GET:a,REQUEST_METHOD"
+      }
+    },
+    "runtime-exclusion-args_post/body": {
+      "coraza.action": {
+        "go": "allow",
+        "rust": "deny"
+      },
+      "coraza.matched_var": {
+        "go": null,
+        "rust": "ARGS_POST:a,REQUEST_METHOD"
+      },
+      "coraza.rule_id": {
+        "go": 0,
+        "rust": 10101
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 2
+      },
+      "coraza.status": {
+        "go": 0,
+        "rust": 409
+      }
+    },
+    "skip-after/body": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "ARGS_POST:a,REQUEST_METHOD",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10101,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 2,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "pending-skip-earlier/body": {
+      "coraza.matched_var": {
+        "go": "ARGS_POST:b,REQUEST_METHOD",
+        "rust": "ARGS_POST:a,REQUEST_METHOD"
+      },
+      "coraza.rule_id": {
+        "go": 10503,
+        "rust": 10501
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 412
+      }
+    },
+    "pending-skip-absent/body": {
+      "coraza.action": {
+        "go": "allow",
+        "rust": "deny"
+      },
+      "coraza.matched_var": {
+        "go": null,
+        "rust": "ARGS_POST:a,REQUEST_METHOD"
+      },
+      "coraza.rule_id": {
+        "go": 0,
+        "rust": 10501
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 2
+      },
+      "coraza.status": {
+        "go": 0,
+        "rust": 412
+      }
+    },
+    "marker-ordinary/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10505,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 2,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "marker-after-target/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10505,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 2,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "marker-inside-chain/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10504,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 0
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "regex-anchors/multiline-form": {
+      "coraza.action": {
+        "go": "allow",
+        "rust": "deny"
+      },
+      "coraza.matched_var": {
+        "go": null,
+        "rust": "ARGS_POST:colour"
+      },
+      "coraza.rule_id": {
+        "go": 0,
+        "rust": 10601
+      },
+      "coraza.rules_hit": {
+        "go": 0,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 0,
+        "rust": 409
+      }
+    },
+    "matched-vars-plural-reset/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10202,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 2,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "matched-vars-chain-scoped/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.matched_var": {
+        "go": "REQUEST_METHOD,REQUEST_URI",
+        "rust": null
+      },
+      "coraza.rule_id": {
+        "go": 10201,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 0
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "matched-vars-empty-name/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.rule_id": {
+        "go": 10201,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 0
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "matched-vars-empty-name/post": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.rule_id": {
+        "go": 10201,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 1,
+        "rust": 0
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "matched-vars-action-name/get": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.rule_id": {
+        "go": 10202,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 2,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    },
+    "matched-vars-action-name/post": {
+      "coraza.action": {
+        "go": "deny",
+        "rust": "allow"
+      },
+      "coraza.rule_id": {
+        "go": 10202,
+        "rust": 0
+      },
+      "coraza.rules_hit": {
+        "go": 2,
+        "rust": 1
+      },
+      "coraza.status": {
+        "go": 409,
+        "rust": 0
+      }
+    }
+  },
+  "plugin_commit": "786d0143ddaa1420d630962122e7b0082b44ed34",
+  "go_reference": "993a588-parity.json"
+}

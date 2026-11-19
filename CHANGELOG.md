@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.1] - 2026-11-19
+
+- Choose the WAF engine with the hub plugin's `library` setting. `libcoraza_plugin.so` runs Go Coraza and remains the default. `libcoraza_rust_plugin.so` runs the Rust engine with its Rust libinjection detector. Both libraries ship for Linux amd64, arm64 and armv7.
+- Both engines agreed on all 99 hub replies across 35 policies. With OWASP CRS 4.25.0, the Rust backend reduced paired median latency by 73–78% across the tested workloads. [Policy comparison and benchmarks](https://github.com/haproxy-haptic/haproxy-spoa-hub-plugin-coraza/blob/v0.12.0-rc.1/benches/backend/results/993a588.md)
+
 ## [0.11.0] - 2026-11-17
 
 ### Added

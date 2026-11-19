@@ -1,0 +1,1147 @@
+{
+  "host": "Linux-7.3.3-1-cachyos-x86_64-with-glibc2.44",
+  "hub_version": "haproxy-spoa-hub 0.13.0",
+  "sha256": {
+    "hub": "8654587cfc720a157cb419c588a9c192a9ea8a314763282405d7204b263821ae",
+    "go": "e998de692fdcef5ded8f1ac2fd15d0a2e02022ab87d212406a0fb1dc9c928ab9",
+    "rust": "e2397d218ecf28600dfa834ef8fd53fef7335bd144ea5d7132811e563a0b5f25"
+  },
+  "artifacts": {
+    "go": {
+      "bytes": 21347344,
+      "go_build_info": true,
+      "go_version": "go1.27.4-X:nodwarf5",
+      "defined_markers": [
+        "_cgo_init",
+        "crosscall2",
+        "runtime.main"
+      ]
+    },
+    "rust": {
+      "bytes": 10891880,
+      "go_build_info": false,
+      "go_version": null,
+      "defined_markers": []
+    }
+  },
+  "post_workload_memory": {
+    "get": {
+      "go": {
+        "VmHWM_KiB": 89044,
+        "Rss_KiB": 89044,
+        "Pss_KiB": 83843
+      },
+      "rust": {
+        "VmHWM_KiB": 55136,
+        "Rss_KiB": 55136,
+        "Pss_KiB": 49920
+      }
+    },
+    "form": {
+      "go": {
+        "VmHWM_KiB": 89064,
+        "Rss_KiB": 89064,
+        "Pss_KiB": 83860
+      },
+      "rust": {
+        "VmHWM_KiB": 55152,
+        "Rss_KiB": 55152,
+        "Pss_KiB": 49934
+      }
+    },
+    "json": {
+      "go": {
+        "VmHWM_KiB": 89464,
+        "Rss_KiB": 89464,
+        "Pss_KiB": 84263
+      },
+      "rust": {
+        "VmHWM_KiB": 55156,
+        "Rss_KiB": 55156,
+        "Pss_KiB": 49940
+      }
+    },
+    "request-response": {
+      "go": {
+        "VmHWM_KiB": 90344,
+        "Rss_KiB": 90344,
+        "Pss_KiB": 85274
+      },
+      "rust": {
+        "VmHWM_KiB": 53436,
+        "Rss_KiB": 53436,
+        "Pss_KiB": 48373
+      }
+    }
+  },
+  "policy_sha256": "0059d196bc7121828456f2579659c3dc16c52588a85462a721486c696fe7f8f3",
+  "server_cpus": [
+    5,
+    6
+  ],
+  "client_cpu": 2,
+  "pairs": 12,
+  "requests_per_batch": 300,
+  "probes": {
+    "request": {
+      "go": {
+        "GET": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.__status": "ok"
+        },
+        "form": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 62,
+          "coraza.__status": "ok"
+        },
+        "json": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 64,
+          "coraza.__status": "ok"
+        },
+        "crs-method": {
+          "coraza.action": "deny",
+          "coraza.status": 403,
+          "coraza.rule_id": 949110,
+          "coraza.anomaly_score": 5,
+          "coraza.rules_hit": 63,
+          "coraza.rule_ids": "911100",
+          "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "form-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "json-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 65,
+          "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        }
+      },
+      "rust": {
+        "GET": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.__status": "ok"
+        },
+        "form": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 62,
+          "coraza.__status": "ok"
+        },
+        "json": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 64,
+          "coraza.__status": "ok"
+        },
+        "crs-method": {
+          "coraza.action": "deny",
+          "coraza.status": 403,
+          "coraza.rule_id": 949110,
+          "coraza.anomaly_score": 5,
+          "coraza.rules_hit": 63,
+          "coraza.rule_ids": "911100",
+          "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "form-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "json-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 65,
+          "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        }
+      }
+    },
+    "response": {
+      "go": {
+        "GET": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.__status": "ok"
+        },
+        "GET-response": {
+          "coraza.resp_action": "allow",
+          "coraza.resp_status": 0,
+          "coraza.resp_rule_id": 0,
+          "coraza.__status": "ok"
+        },
+        "form": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 62,
+          "coraza.__status": "ok"
+        },
+        "form-response": {
+          "coraza.resp_action": "allow",
+          "coraza.resp_status": 0,
+          "coraza.resp_rule_id": 0,
+          "coraza.__status": "ok"
+        },
+        "json": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 64,
+          "coraza.__status": "ok"
+        },
+        "json-response": {
+          "coraza.resp_action": "allow",
+          "coraza.resp_status": 0,
+          "coraza.resp_rule_id": 0,
+          "coraza.__status": "ok"
+        },
+        "crs-method": {
+          "coraza.action": "deny",
+          "coraza.status": 403,
+          "coraza.rule_id": 949110,
+          "coraza.anomaly_score": 5,
+          "coraza.rules_hit": 63,
+          "coraza.rule_ids": "911100",
+          "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "form-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "json-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 65,
+          "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "response-control-request": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.__status": "ok"
+        },
+        "response-control": {
+          "coraza.resp_action": "deny",
+          "coraza.resp_status": 412,
+          "coraza.resp_rule_id": 10102,
+          "coraza.__status": "ok"
+        }
+      },
+      "rust": {
+        "GET": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.__status": "ok"
+        },
+        "GET-response": {
+          "coraza.resp_action": "allow",
+          "coraza.resp_status": 0,
+          "coraza.resp_rule_id": 0,
+          "coraza.__status": "ok"
+        },
+        "form": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 62,
+          "coraza.__status": "ok"
+        },
+        "form-response": {
+          "coraza.resp_action": "allow",
+          "coraza.resp_status": 0,
+          "coraza.resp_rule_id": 0,
+          "coraza.__status": "ok"
+        },
+        "json": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 64,
+          "coraza.__status": "ok"
+        },
+        "json-response": {
+          "coraza.resp_action": "allow",
+          "coraza.resp_status": 0,
+          "coraza.resp_rule_id": 0,
+          "coraza.__status": "ok"
+        },
+        "crs-method": {
+          "coraza.action": "deny",
+          "coraza.status": 403,
+          "coraza.rule_id": 949110,
+          "coraza.anomaly_score": 5,
+          "coraza.rules_hit": 63,
+          "coraza.rule_ids": "911100",
+          "coraza.matched_var": "REQUEST_METHOD,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "form-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.matched_var": "ARGS_POST:label,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "json-control": {
+          "coraza.action": "deny",
+          "coraza.status": 409,
+          "coraza.rule_id": 10101,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 65,
+          "coraza.matched_var": "ARGS_POST:json.label,REQUEST_HEADERS:Content-Type,REQUEST_FILENAME",
+          "coraza.__status": "ok"
+        },
+        "response-control-request": {
+          "coraza.action": "allow",
+          "coraza.status": 0,
+          "coraza.rule_id": 0,
+          "coraza.anomaly_score": 0,
+          "coraza.rules_hit": 63,
+          "coraza.__status": "ok"
+        },
+        "response-control": {
+          "coraza.resp_action": "deny",
+          "coraza.resp_status": 412,
+          "coraza.resp_rule_id": 10102,
+          "coraza.__status": "ok"
+        }
+      }
+    }
+  },
+  "probe_field_differences": {
+    "request": {},
+    "response": {}
+  },
+  "batches": {
+    "get": [
+      {
+        "go": {
+          "p50_us": 640.484,
+          "p95_us": 1078.856,
+          "p99_us": 1841.961,
+          "hub_cpu_us": 743.1040566666667
+        },
+        "rust": {
+          "p50_us": 121.971,
+          "p95_us": 170.001,
+          "p99_us": 229.501,
+          "hub_cpu_us": 127.20487
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 121.361,
+          "p95_us": 179.401,
+          "p99_us": 259.881,
+          "hub_cpu_us": 126.33756333333334
+        },
+        "go": {
+          "p50_us": 632.744,
+          "p95_us": 889.665,
+          "p99_us": 1713.36,
+          "hub_cpu_us": 701.5159866666667
+        }
+      },
+      {
+        "go": {
+          "p50_us": 625.274,
+          "p95_us": 810.755,
+          "p99_us": 1207.247,
+          "hub_cpu_us": 693.7832066666666
+        },
+        "rust": {
+          "p50_us": 120.74,
+          "p95_us": 138.121,
+          "p99_us": 171.571,
+          "hub_cpu_us": 123.49809666666667
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 119.381,
+          "p95_us": 129.491,
+          "p99_us": 182.101,
+          "hub_cpu_us": 120.49738
+        },
+        "go": {
+          "p50_us": 641.964,
+          "p95_us": 959.355,
+          "p99_us": 1338.129,
+          "hub_cpu_us": 718.17616
+        }
+      },
+      {
+        "go": {
+          "p50_us": 636.453,
+          "p95_us": 1085.527,
+          "p99_us": 1457.049,
+          "hub_cpu_us": 724.1768233333333
+        },
+        "rust": {
+          "p50_us": 140.33,
+          "p95_us": 186.811,
+          "p99_us": 243.851,
+          "hub_cpu_us": 136.08093
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 120.67,
+          "p95_us": 155.761,
+          "p99_us": 197.832,
+          "hub_cpu_us": 123.81839333333333
+        },
+        "go": {
+          "p50_us": 638.394,
+          "p95_us": 864.155,
+          "p99_us": 1326.008,
+          "hub_cpu_us": 693.6349333333334
+        }
+      },
+      {
+        "go": {
+          "p50_us": 642.254,
+          "p95_us": 819.675,
+          "p99_us": 1116.797,
+          "hub_cpu_us": 704.32462
+        },
+        "rust": {
+          "p50_us": 120.57,
+          "p95_us": 147.571,
+          "p99_us": 202.501,
+          "hub_cpu_us": 124.20775333333333
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 120.241,
+          "p95_us": 149.761,
+          "p99_us": 170.611,
+          "hub_cpu_us": 122.53562666666667
+        },
+        "go": {
+          "p50_us": 635.843,
+          "p95_us": 824.435,
+          "p99_us": 1269.387,
+          "hub_cpu_us": 706.8088666666666
+        }
+      },
+      {
+        "go": {
+          "p50_us": 632.833,
+          "p95_us": 945.215,
+          "p99_us": 1296.987,
+          "hub_cpu_us": 709.8766633333333
+        },
+        "rust": {
+          "p50_us": 121.871,
+          "p95_us": 146.761,
+          "p99_us": 191.061,
+          "hub_cpu_us": 125.36732333333333
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 121.971,
+          "p95_us": 149.62,
+          "p99_us": 183.331,
+          "hub_cpu_us": 124.17528
+        },
+        "go": {
+          "p50_us": 631.894,
+          "p95_us": 858.165,
+          "p99_us": 1277.408,
+          "hub_cpu_us": 700.8400233333333
+        }
+      },
+      {
+        "go": {
+          "p50_us": 626.043,
+          "p95_us": 972.646,
+          "p99_us": 1408.288,
+          "hub_cpu_us": 696.0088533333334
+        },
+        "rust": {
+          "p50_us": 120.111,
+          "p95_us": 157.261,
+          "p99_us": 223.182,
+          "hub_cpu_us": 124.07194333333334
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 120.201,
+          "p95_us": 148.211,
+          "p99_us": 170.251,
+          "hub_cpu_us": 123.26863666666667
+        },
+        "go": {
+          "p50_us": 626.764,
+          "p95_us": 827.045,
+          "p99_us": 1131.167,
+          "hub_cpu_us": 692.9516833333333
+        }
+      }
+    ],
+    "form": [
+      {
+        "go": {
+          "p50_us": 677.744,
+          "p95_us": 1119.017,
+          "p99_us": 1479.759,
+          "hub_cpu_us": 784.5142866666666
+        },
+        "rust": {
+          "p50_us": 132.341,
+          "p95_us": 161.181,
+          "p99_us": 208.981,
+          "hub_cpu_us": 135.86190666666667
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 134.291,
+          "p95_us": 195.072,
+          "p99_us": 410.632,
+          "hub_cpu_us": 140.43130333333335
+        },
+        "go": {
+          "p50_us": 680.804,
+          "p95_us": 1100.566,
+          "p99_us": 1297.707,
+          "hub_cpu_us": 761.0869133333333
+        }
+      },
+      {
+        "go": {
+          "p50_us": 669.975,
+          "p95_us": 1100.806,
+          "p99_us": 1524.299,
+          "hub_cpu_us": 763.7295533333333
+        },
+        "rust": {
+          "p50_us": 130.911,
+          "p95_us": 172.031,
+          "p99_us": 208.031,
+          "hub_cpu_us": 135.54822666666666
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 130.401,
+          "p95_us": 144.821,
+          "p99_us": 184.761,
+          "hub_cpu_us": 131.60347333333334
+        },
+        "go": {
+          "p50_us": 683.894,
+          "p95_us": 1122.447,
+          "p99_us": 1721.83,
+          "hub_cpu_us": 780.8415833333333
+        }
+      },
+      {
+        "go": {
+          "p50_us": 677.174,
+          "p95_us": 927.296,
+          "p99_us": 1410.079,
+          "hub_cpu_us": 746.8393733333334
+        },
+        "rust": {
+          "p50_us": 137.991,
+          "p95_us": 183.431,
+          "p99_us": 250.641,
+          "hub_cpu_us": 142.68249666666668
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 130.761,
+          "p95_us": 157.261,
+          "p99_us": 190.311,
+          "hub_cpu_us": 133.784
+        },
+        "go": {
+          "p50_us": 671.404,
+          "p95_us": 1073.726,
+          "p99_us": 1413.128,
+          "hub_cpu_us": 768.1845
+        }
+      },
+      {
+        "go": {
+          "p50_us": 670.695,
+          "p95_us": 845.485,
+          "p99_us": 1253.777,
+          "hub_cpu_us": 734.26721
+        },
+        "rust": {
+          "p50_us": 135.38,
+          "p95_us": 234.931,
+          "p99_us": 825.665,
+          "hub_cpu_us": 141.61406333333332
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 132.15,
+          "p95_us": 157.611,
+          "p99_us": 214.922,
+          "hub_cpu_us": 133.88189333333332
+        },
+        "go": {
+          "p50_us": 672.374,
+          "p95_us": 1049.136,
+          "p99_us": 1275.538,
+          "hub_cpu_us": 773.18176
+        }
+      },
+      {
+        "go": {
+          "p50_us": 672.384,
+          "p95_us": 882.985,
+          "p99_us": 1557.68,
+          "hub_cpu_us": 761.9844166666667
+        },
+        "rust": {
+          "p50_us": 130.911,
+          "p95_us": 147.621,
+          "p99_us": 198.431,
+          "hub_cpu_us": 133.67267
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 130.531,
+          "p95_us": 147.821,
+          "p99_us": 174.551,
+          "hub_cpu_us": 132.32141333333334
+        },
+        "go": {
+          "p50_us": 666.564,
+          "p95_us": 813.895,
+          "p99_us": 1141.917,
+          "hub_cpu_us": 731.9386466666666
+        }
+      },
+      {
+        "go": {
+          "p50_us": 673.774,
+          "p95_us": 1102.296,
+          "p99_us": 1721.55,
+          "hub_cpu_us": 779.24351
+        },
+        "rust": {
+          "p50_us": 139.811,
+          "p95_us": 207.671,
+          "p99_us": 280.351,
+          "hub_cpu_us": 147.26489333333333
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 136.031,
+          "p95_us": 199.271,
+          "p99_us": 551.243,
+          "hub_cpu_us": 140.98473
+        },
+        "go": {
+          "p50_us": 683.644,
+          "p95_us": 1114.427,
+          "p99_us": 1432.068,
+          "hub_cpu_us": 783.3824266666667
+        }
+      }
+    ],
+    "json": [
+      {
+        "go": {
+          "p50_us": 706.764,
+          "p95_us": 931.206,
+          "p99_us": 1777.68,
+          "hub_cpu_us": 795.1442633333334
+        },
+        "rust": {
+          "p50_us": 134.22,
+          "p95_us": 149.421,
+          "p99_us": 176.341,
+          "hub_cpu_us": 136.35687
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 134.821,
+          "p95_us": 179.331,
+          "p99_us": 224.712,
+          "hub_cpu_us": 138.99916333333334
+        },
+        "go": {
+          "p50_us": 724.964,
+          "p95_us": 1197.697,
+          "p99_us": 1681.34,
+          "hub_cpu_us": 828.8636233333333
+        }
+      },
+      {
+        "go": {
+          "p50_us": 718.835,
+          "p95_us": 924.535,
+          "p99_us": 1395.358,
+          "hub_cpu_us": 782.7875566666667
+        },
+        "rust": {
+          "p50_us": 135.291,
+          "p95_us": 178.951,
+          "p99_us": 225.451,
+          "hub_cpu_us": 139.00185666666667
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 135.771,
+          "p95_us": 182.852,
+          "p99_us": 353.222,
+          "hub_cpu_us": 139.21788666666666
+        },
+        "go": {
+          "p50_us": 725.785,
+          "p95_us": 986.026,
+          "p99_us": 1411.908,
+          "hub_cpu_us": 816.2227733333333
+        }
+      },
+      {
+        "go": {
+          "p50_us": 717.044,
+          "p95_us": 1207.787,
+          "p99_us": 1633.31,
+          "hub_cpu_us": 819.0165133333334
+        },
+        "rust": {
+          "p50_us": 136.471,
+          "p95_us": 202.972,
+          "p99_us": 288.321,
+          "hub_cpu_us": 141.39135333333334
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 134.13,
+          "p95_us": 167.361,
+          "p99_us": 440.833,
+          "hub_cpu_us": 136.77771333333334
+        },
+        "go": {
+          "p50_us": 737.494,
+          "p95_us": 1239.858,
+          "p99_us": 1676.08,
+          "hub_cpu_us": 823.98879
+        }
+      },
+      {
+        "go": {
+          "p50_us": 725.675,
+          "p95_us": 1270.097,
+          "p99_us": 1885.421,
+          "hub_cpu_us": 837.3595866666667
+        },
+        "rust": {
+          "p50_us": 135.6,
+          "p95_us": 183.511,
+          "p99_us": 321.012,
+          "hub_cpu_us": 140.97008666666667
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 133.48,
+          "p95_us": 143.881,
+          "p99_us": 165.131,
+          "hub_cpu_us": 135.23427333333333
+        },
+        "go": {
+          "p50_us": 724.554,
+          "p95_us": 1120.737,
+          "p99_us": 1271.628,
+          "hub_cpu_us": 819.5140233333333
+        }
+      },
+      {
+        "go": {
+          "p50_us": 710.954,
+          "p95_us": 911.035,
+          "p99_us": 1434.338,
+          "hub_cpu_us": 778.6563133333333
+        },
+        "rust": {
+          "p50_us": 135.121,
+          "p95_us": 181.981,
+          "p99_us": 246.671,
+          "hub_cpu_us": 140.29493
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 134.071,
+          "p95_us": 166.45,
+          "p99_us": 271.221,
+          "hub_cpu_us": 137.13421666666667
+        },
+        "go": {
+          "p50_us": 715.154,
+          "p95_us": 986.665,
+          "p99_us": 1616.11,
+          "hub_cpu_us": 809.57848
+        }
+      },
+      {
+        "go": {
+          "p50_us": 721.535,
+          "p95_us": 1071.756,
+          "p99_us": 1954.211,
+          "hub_cpu_us": 813.9960866666667
+        },
+        "rust": {
+          "p50_us": 135.07,
+          "p95_us": 158.161,
+          "p99_us": 289.411,
+          "hub_cpu_us": 138.21237
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 134.241,
+          "p95_us": 167.131,
+          "p99_us": 344.173,
+          "hub_cpu_us": 137.05585666666667
+        },
+        "go": {
+          "p50_us": 713.424,
+          "p95_us": 982.886,
+          "p99_us": 1273.867,
+          "hub_cpu_us": 781.14239
+        }
+      }
+    ],
+    "request-response": [
+      {
+        "go": {
+          "p50_us": 792.024,
+          "p95_us": 1211.927,
+          "p99_us": 2144.993,
+          "hub_cpu_us": 913.31418
+        },
+        "rust": {
+          "p50_us": 215.112,
+          "p95_us": 314.911,
+          "p99_us": 424.303,
+          "hub_cpu_us": 222.10690333333332
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 200.161,
+          "p95_us": 248.501,
+          "p99_us": 313.502,
+          "hub_cpu_us": 202.56912
+        },
+        "go": {
+          "p50_us": 827.935,
+          "p95_us": 1313.838,
+          "p99_us": 2276.204,
+          "hub_cpu_us": 935.2794766666667
+        }
+      },
+      {
+        "go": {
+          "p50_us": 808.504,
+          "p95_us": 1240.277,
+          "p99_us": 1506.529,
+          "hub_cpu_us": 899.76818
+        },
+        "rust": {
+          "p50_us": 199.891,
+          "p95_us": 265.191,
+          "p99_us": 1128.267,
+          "hub_cpu_us": 206.37297666666666
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 212.462,
+          "p95_us": 314.621,
+          "p99_us": 905.835,
+          "hub_cpu_us": 215.03313
+        },
+        "go": {
+          "p50_us": 800.645,
+          "p95_us": 1010.936,
+          "p99_us": 1462.597,
+          "hub_cpu_us": 867.4821933333334
+        }
+      },
+      {
+        "go": {
+          "p50_us": 799.295,
+          "p95_us": 1124.377,
+          "p99_us": 2298.133,
+          "hub_cpu_us": 892.8294433333333
+        },
+        "rust": {
+          "p50_us": 202.86,
+          "p95_us": 288.671,
+          "p99_us": 453.202,
+          "hub_cpu_us": 210.07455333333334
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 200.391,
+          "p95_us": 293.732,
+          "p99_us": 1498.549,
+          "hub_cpu_us": 208.41167666666666
+        },
+        "go": {
+          "p50_us": 804.644,
+          "p95_us": 1171.958,
+          "p99_us": 1703.0,
+          "hub_cpu_us": 898.9174033333334
+        }
+      },
+      {
+        "go": {
+          "p50_us": 792.714,
+          "p95_us": 1029.886,
+          "p99_us": 1507.558,
+          "hub_cpu_us": 885.7745066666666
+        },
+        "rust": {
+          "p50_us": 195.351,
+          "p95_us": 242.752,
+          "p99_us": 374.882,
+          "hub_cpu_us": 198.35168333333334
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 195.741,
+          "p95_us": 223.912,
+          "p99_us": 263.362,
+          "hub_cpu_us": 196.44634
+        },
+        "go": {
+          "p50_us": 792.005,
+          "p95_us": 1007.085,
+          "p99_us": 1527.5,
+          "hub_cpu_us": 860.1860066666667
+        }
+      },
+      {
+        "go": {
+          "p50_us": 807.455,
+          "p95_us": 1324.098,
+          "p99_us": 2048.122,
+          "hub_cpu_us": 912.73611
+        },
+        "rust": {
+          "p50_us": 197.301,
+          "p95_us": 246.251,
+          "p99_us": 377.272,
+          "hub_cpu_us": 200.17844333333332
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 195.711,
+          "p95_us": 230.581,
+          "p99_us": 364.962,
+          "hub_cpu_us": 197.26971
+        },
+        "go": {
+          "p50_us": 796.304,
+          "p95_us": 994.516,
+          "p99_us": 2168.792,
+          "hub_cpu_us": 890.0365266666666
+        }
+      },
+      {
+        "go": {
+          "p50_us": 798.005,
+          "p95_us": 1078.837,
+          "p99_us": 2008.372,
+          "hub_cpu_us": 892.12867
+        },
+        "rust": {
+          "p50_us": 196.241,
+          "p95_us": 244.712,
+          "p99_us": 270.962,
+          "hub_cpu_us": 200.24595
+        }
+      },
+      {
+        "rust": {
+          "p50_us": 195.611,
+          "p95_us": 259.321,
+          "p99_us": 397.043,
+          "hub_cpu_us": 197.89290666666668
+        },
+        "go": {
+          "p50_us": 791.374,
+          "p95_us": 995.676,
+          "p99_us": 1448.189,
+          "hub_cpu_us": 858.4576866666666
+        }
+      }
+    ]
+  },
+  "summary": {
+    "get": {
+      "p50_us": {
+        "go": 634.34,
+        "rust": 120.7,
+        "paired_rust_change_pct": -80.82
+      },
+      "p95_us": {
+        "go": 876.91,
+        "rust": 149.69,
+        "paired_rust_change_pct": -82.68
+      },
+      "p99_us": {
+        "go": 1311.5,
+        "rust": 194.45,
+        "paired_rust_change_pct": -85.17
+      },
+      "hub_cpu_us": {
+        "go": 702.92,
+        "rust": 124.12,
+        "paired_rust_change_pct": -82.25
+      }
+    },
+    "form": {
+      "p50_us": {
+        "go": 673.08,
+        "rust": 132.25,
+        "paired_rust_change_pct": -80.38
+      },
+      "p95_us": {
+        "go": 1087.15,
+        "rust": 166.61,
+        "paired_rust_change_pct": -82.78
+      },
+      "p99_us": {
+        "go": 1422.6,
+        "rust": 211.95,
+        "paired_rust_change_pct": -84.21
+      },
+      "hub_cpu_us": {
+        "go": 765.96,
+        "rust": 135.71,
+        "paired_rust_change_pct": -82.13
+      }
+    },
+    "json": {
+      "p50_us": {
+        "go": 720.18,
+        "rust": 134.95,
+        "paired_rust_change_pct": -81.27
+      },
+      "p95_us": {
+        "go": 1029.21,
+        "rust": 173.16,
+        "paired_rust_change_pct": -83.57
+      },
+      "p99_us": {
+        "go": 1624.71,
+        "rust": 279.77,
+        "paired_rust_change_pct": -83.1
+      },
+      "hub_cpu_us": {
+        "go": 815.11,
+        "rust": 138.61,
+        "paired_rust_change_pct": -82.98
+      }
+    },
+    "request-response": {
+      "p50_us": {
+        "go": 798.65,
+        "rust": 198.6,
+        "paired_rust_change_pct": -75.28
+      },
+      "p95_us": {
+        "go": 1101.61,
+        "rust": 253.91,
+        "paired_rust_change_pct": -76.62
+      },
+      "p99_us": {
+        "go": 1855.69,
+        "rust": 387.16,
+        "paired_rust_change_pct": -80.25
+      },
+      "hub_cpu_us": {
+        "go": 892.48,
+        "rust": 201.41,
+        "paired_rust_change_pct": -77.11
+      }
+    }
+  }
+}
