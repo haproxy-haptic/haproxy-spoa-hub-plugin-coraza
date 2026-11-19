@@ -16,7 +16,9 @@ typedef struct {
     int status;         // HTTP status code (0 for allow)
     const char *data;   // Optional bounded interruption data (free via coraza_free_string when non-empty)
     int anomaly_score;  // CRS anomaly score (sum of matched rule severities)
-    int rules_hit;      // Number of matched rules
+    int rules_hit;      // Number of matched rules, including CRS control rules
+    const char *matched_rules; // Selected hits for metrics as JSON, or NULL
+    const char *matched_var;   // Matched field names, or NULL
 } coraza_result_t;
 ```
 
@@ -41,7 +43,8 @@ coraza_waf_t coraza_waf_new(
     int resp_body_limit,
     int rule_match_log,
     int matched_data_log_mode,
-    int matched_data_max_bytes
+    int matched_data_max_bytes,
+    int include_crs_control_rule_hits
 );
 
 int coraza_waf_rules_count(coraza_waf_t waf);

@@ -59,6 +59,7 @@ struct RuleInfo {
     severity: Option<u8>,
     log: bool,
     hit_json: String,
+    report_hit: bool,
 }
 
 #[derive(Debug)]
@@ -79,10 +80,14 @@ impl RuleCatalog {
                     continue;
                 };
                 let mut severity = None;
+                let mut crs_tag = false;
                 let mut log = rule.phase == Phase::RequestBody;
                 for action in &rule.actions {
                     match action {
                         Action::Metadata(MetadataAction::Severity(n)) => severity = Some(*n),
+                        Action::Metadata(MetadataAction::Tag(tag)) if tag == "OWASP_CRS" => {
+                            crs_tag = true
+                        }
                         Action::Logging(LoggingAction::Log) => log = true,
                         Action::Logging(LoggingAction::NoLog) => log = false,
                         _ => (),
@@ -95,6 +100,9 @@ impl RuleCatalog {
                         id,
                         severity,
                         log,
+                        report_hit: config.include_crs_control_rule_hits
+                            || severity.is_some()
+                            || !crs_tag,
                         hit_json: format!(r#"{{"i":{id},"s":{priority}}}"#),
                     },
                 );
@@ -118,21 +126,28 @@ impl RuleCatalog {
         let mut result = Evaluation::allow();
         let matched = tx.matched_rules();
         result.rules_hit = matched.len() as i32;
-        let mut threshold = None;
-        let mut json = String::with_capacity(matched.len() * 20);
+        let interruption = tx.intervention();
+        result.rule_id = interruption
+            .and_then(|i| i.rule_ids.first())
+            .and_then(|id| id.parse().ok())
+            .unwrap_or(0);
+        let mut json = String::new();
         for id in matched {
             let Some(info) = self.rules.get(id) else {
                 continue;
             };
-            if info.id > 0 {
+            if result.rule_id == 0
+                && interruption.is_none()
+                && matches!(info.id, 949110 | 949111 | 959100 | 959101)
+            {
+                result.rule_id = info.id as i32;
+            }
+            if info.id > 0 && (info.report_hit || info.id == i64::from(result.rule_id)) {
                 json.push(if json.is_empty() { '[' } else { ',' });
                 json.push_str(&info.hit_json);
             }
             if let Some(severity @ 2..=5) = info.severity {
                 result.anomaly_score += i32::from(7 - severity);
-            }
-            if threshold.is_none() && matches!(info.id, 949110 | 949111 | 959100 | 959101) {
-                threshold = Some(info.id as i32);
             }
         }
         if !json.is_empty() {
@@ -140,12 +155,7 @@ impl RuleCatalog {
         }
         result.matched_rules = json;
 
-        if let Some(interruption) = tx.intervention() {
-            result.rule_id = interruption
-                .rule_ids
-                .first()
-                .and_then(|id| id.parse().ok())
-                .unwrap_or(0);
+        if let Some(interruption) = interruption {
             result.status = i32::from(interruption.status);
             result.action = if interruption.drop_connection {
                 "drop"
@@ -157,8 +167,7 @@ impl RuleCatalog {
             if let Some(url) = interruption.url.as_ref().filter(|_| expose_data) {
                 result.data = bounded(url.as_bytes(), limit);
             }
-        } else if let Some(id) = threshold {
-            result.rule_id = id;
+        } else if result.rule_id != 0 {
             result.action = "deny";
             result.status = 403;
         } else {

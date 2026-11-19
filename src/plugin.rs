@@ -454,9 +454,9 @@ fn process_request(
         result.rule_id,
     );
 
-    emit_eval_metrics("request", &result, selected_app, elapsed);
+    let hits = emit_eval_metrics("request", &result, selected_app, elapsed);
 
-    let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data);
+    let variables = result_to_variables(&result, &tx_id, false, config.expose_matched_data, hits);
 
     Ok(ProcessingResult { variables })
 }
@@ -491,7 +491,12 @@ fn deny_without_application() -> ProcessingResult {
 /// `process_request` and `process_response`; centralises the label
 /// shape so the two paths can't drift. Hub prefixes everything with
 /// `plugin_coraza_`.
-fn emit_eval_metrics(phase: &str, result: &Evaluation, app: &str, elapsed: std::time::Duration) {
+fn emit_eval_metrics(
+    phase: &str,
+    result: &Evaluation,
+    app: &str,
+    elapsed: Duration,
+) -> Vec<RuleHit> {
     let action = result.action_str();
     METRICS.counter(
         "evaluations_total",
@@ -514,45 +519,8 @@ fn emit_eval_metrics(phase: &str, result: &Evaluation, app: &str, elapsed: std::
             1,
         );
     }
-    emit_rule_hit_metrics(phase, result, app);
-}
-
-/// Per-matched-rule hit counters — the detect-mode tuning signal.
-/// `denials_total` only names the single interrupting rule; tuning a
-/// policy toward `deny` needs every rule that fired on traffic that was
-/// ultimately ALLOWED (in detect mode nothing interrupts at all). Rules
-/// arrive as compact JSON from the Go bridge; only rules that actually
-/// matched emit.
-///
-/// Cardinality ceiling: series count is bounded by
-/// (#distinct rules that have ever matched) x (#apps) x (2 phases).
-/// Severity does NOT multiply the product — each rule ID carries one
-/// fixed severity, so it's a dependent label kept for query ergonomics.
-/// CRS ships ~800 rule IDs but only a small fraction ever match real
-/// traffic; a deployment where every rule matched for every app would
-/// still sit well under typical per-target series budgets. A decode
-/// failure of the FFI payload increments `rule_hits_decode_errors_total`
-/// so a contract break between the Go bridge and this parser is
-/// operator-visible rather than a silent metric flatline.
-fn emit_rule_hit_metrics(phase: &str, result: &Evaluation, app: &str) {
-    #[derive(serde::Deserialize)]
-    struct RuleHit {
-        i: i64,
-        s: i64,
-    }
-    let raw = result.matched_rules_str();
-    if raw.is_empty() {
-        return;
-    }
-    let hits: Vec<RuleHit> = match serde_json::from_str(raw) {
-        Ok(hits) => hits,
-        Err(err) => {
-            log::debug!("unparseable matched_rules payload ({err}): {raw}");
-            METRICS.counter("rule_hits_decode_errors_total", &[("app", app)], 1);
-            return;
-        }
-    };
-    for hit in hits {
+    let hits = decode_rule_hits(result.matched_rules_str(), app);
+    for hit in &hits {
         let rule_id = hit.i.to_string();
         METRICS.counter(
             "rule_hits_total",
@@ -565,6 +533,24 @@ fn emit_rule_hit_metrics(phase: &str, result: &Evaluation, app: &str) {
             1,
         );
     }
+    hits
+}
+
+#[derive(serde::Deserialize)]
+struct RuleHit {
+    i: i64,
+    s: i64,
+}
+
+fn decode_rule_hits(raw: &str, app: &str) -> Vec<RuleHit> {
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    serde_json::from_str(raw).unwrap_or_else(|err| {
+        log::debug!("unparseable matched_rules payload ({err}): {raw}");
+        METRICS.counter("rule_hits_decode_errors_total", &[("app", app)], 1);
+        Vec::new()
+    })
 }
 
 /// ModSecurity/Coraza severity numbers to their standard names. Coraza
@@ -593,18 +579,7 @@ const MAX_RULE_IDS: usize = 10;
 /// mode `rule_id` is the scoring rule (949110) for every would-block request;
 /// these are the rules behind it. Setup and reporting rules (no severity) are
 /// left out. Empty when no such rule matched or the payload does not decode.
-fn scoring_rule_ids(matched_rules: &str) -> String {
-    #[derive(serde::Deserialize)]
-    struct RuleHit {
-        i: i64,
-        s: i64,
-    }
-    if matched_rules.is_empty() {
-        return String::new();
-    }
-    let Ok(mut hits) = serde_json::from_str::<Vec<RuleHit>>(matched_rules) else {
-        return String::new();
-    };
+fn scoring_rule_ids(mut hits: Vec<RuleHit>) -> String {
     hits.retain(|h| (0..=5).contains(&h.s) && h.i > 0);
     hits.sort_by_key(|h| (h.s, h.i));
     hits.dedup_by_key(|h| h.i);
@@ -649,9 +624,9 @@ fn process_response(
     // looks up the app context by tx_id, not by an arg. Pass empty
     // string for consistent labelset shape across phase=request and
     // phase=response.
-    emit_eval_metrics("response", &result, "", elapsed);
+    let hits = emit_eval_metrics("response", &result, "", elapsed);
 
-    let variables = result_to_variables(&result, tx_id, true, false);
+    let variables = result_to_variables(&result, tx_id, true, false, hits);
 
     Ok(ProcessingResult { variables })
 }
@@ -662,6 +637,7 @@ fn result_to_variables(
     tx_id: &str,
     is_response: bool,
     expose_matched_data: bool,
+    hits: Vec<RuleHit>,
 ) -> RVec<TxnVariable> {
     let prefix = if is_response { "resp_" } else { "" };
     let mut vars = RVec::with_capacity(if is_response { 3 } else { 8 });
@@ -701,7 +677,7 @@ fn result_to_variables(
 
         // The scoring rules behind the verdict, e.g. "930130,920420": rule
         // IDs only, so like `matched_var` it carries no request content.
-        let rule_ids = scoring_rule_ids(result.matched_rules_str());
+        let rule_ids = scoring_rule_ids(hits);
         if !rule_ids.is_empty() {
             vars.push(TxnVariable::transaction(
                 "rule_ids",
@@ -779,11 +755,15 @@ fn extract_bytes_as_headers(value: Option<&SpoeValue>) -> Vec<u8> {
 mod rule_ids_tests {
     use super::*;
 
+    fn scoring_ids(raw: &str) -> String {
+        scoring_rule_ids(decode_rule_hits(raw, ""))
+    }
+
     #[test]
     fn names_the_scoring_rules_most_severe_first() {
         // 901100 (setup, no severity) and 949110 (scoring, no severity in CRS 4) stay out
         let raw = r#"[{"i":901100,"s":-1},{"i":920420,"s":2},{"i":930130,"s":2},{"i":920350,"s":4},{"i":949110,"s":-1}]"#;
-        assert_eq!(scoring_rule_ids(raw), "920420,930130,920350");
+        assert_eq!(scoring_ids(raw), "920420,930130,920350");
     }
 
     #[test]
@@ -792,16 +772,16 @@ mod rule_ids_tests {
             .map(|n| format!(r#"{{"i":{},"s":2}}"#, 942100 + n))
             .collect();
         hits.push(r#"{"i":942100,"s":2}"#.to_string());
-        let ids = scoring_rule_ids(&format!("[{}]", hits.join(",")));
+        let ids = scoring_ids(&format!("[{}]", hits.join(",")));
         assert_eq!(ids.split(',').count(), MAX_RULE_IDS);
         assert!(ids.starts_with("942100,942101,"));
     }
 
     #[test]
     fn is_empty_without_a_scoring_rule_or_with_a_damaged_payload() {
-        assert_eq!(scoring_rule_ids(""), "");
-        assert_eq!(scoring_rule_ids(r#"[{"i":901100,"s":-1}]"#), "");
-        assert_eq!(scoring_rule_ids("not json"), "");
+        assert_eq!(scoring_ids(""), "");
+        assert_eq!(scoring_ids(r#"[{"i":901100,"s":-1}]"#), "");
+        assert_eq!(scoring_ids("not json"), "");
     }
 }
 
@@ -1658,6 +1638,70 @@ mod reload_tests {
                 )
             })
             .value
+    }
+
+    #[test]
+    fn rule_hit_metrics_keep_detections_and_optionally_count_crs_controls() {
+        use haproxy_spoa_hub_plugin_api::{MetricKind, MetricLabel, RSlice, RStr};
+
+        const APP: &str = "test-rule-hit-metrics";
+        static HITS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        extern "C" fn collect(
+            _: *const std::ffi::c_void,
+            name: RStr<'_>,
+            labels: RSlice<'_, MetricLabel<'_>>,
+            _: f64,
+            _: MetricKind,
+        ) {
+            let label = |key| {
+                labels
+                    .iter()
+                    .find(|(k, _)| k.as_str() == key)
+                    .map(|(_, v)| v.as_str())
+            };
+            if name.as_str() == "rule_hits_total" && label("app") == Some(APP) {
+                if let Some(id) = label("rule_id") {
+                    HITS.lock().unwrap().push(id.to_owned());
+                }
+            }
+        }
+
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        METRICS.install(collect, std::ptr::null());
+        let directives = r#"SecRuleEngine On
+SecAction "id:1,phase:1,pass,nolog,tag:OWASP_CRS"
+SecAction "id:2,phase:1,pass,nolog,severity:INFO,tag:OWASP_CRS"
+SecAction "id:3,phase:1,pass,nolog"
+SecRule REQUEST_URI "@streq /test" "id:4,phase:1,deny,status:403,tag:OWASP_CRS"
+"#;
+        for include_controls in [false, true] {
+            let mut context = make_context_with_app("SecRuleEngine On", APP, directives);
+            if include_controls {
+                context.config.insert(
+                    "include_crs_control_rule_hits".into(),
+                    ConfigValue::Bool(true),
+                );
+            }
+            let mut plugin = CorazaPlugin::__new();
+            plugin.__init(&context).unwrap();
+            let mut request = make_app_request("/test", APP);
+            request
+                .args
+                .insert("detect-only".into(), SpoeValue::Bool(true));
+            let verdict = plugin.__process(&request).unwrap();
+            assert!(matches!(find_var(&verdict, "rule_id"), SpoeValue::Int32(4)));
+            assert!(matches!(
+                find_var(&verdict, "rules_hit"),
+                SpoeValue::Int32(4)
+            ));
+            let hits = std::mem::take(&mut *HITS.lock().unwrap());
+            let expected = if include_controls {
+                &["1", "2", "3", "4"][..]
+            } else {
+                &["2", "3", "4"][..]
+            };
+            assert_eq!(hits, expected);
+        }
     }
 
     /// After a reload, the new init's directives MUST be the ones

@@ -104,7 +104,7 @@ func TestPluginVerdictsMatchEngine(t *testing.T) {
 		"detection only": chartDefaultDirectives + "SecRuleEngine DetectionOnly\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			handle, _, err := createWAF(directives, "", "", 0, 0, 0, false, matchedDataNone, 128)
+			handle, _, err := createWAF(directives, "", "", 0, 0, 0, false, matchedDataNone, 128, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -120,7 +120,7 @@ func assertPluginMatchesEngine(t *testing.T, handle uint64) {
 		name := r.method + " " + r.path + "?" + r.query
 		want := evalEngine(t, handle, r, "engine-"+strconv.Itoa(i))
 		reference := legacyMatchedRulesJSON(want.matched)
-		if got := string(appendMatchedRulesJSON(nil, want.matched)); got != reference {
+		if got := string(appendMatchedRulesJSON(nil, want.matched, true, 0)); got != reference {
 			t.Errorf("%s: encoder output %q, encoding/json %q", name, got, reference)
 		}
 

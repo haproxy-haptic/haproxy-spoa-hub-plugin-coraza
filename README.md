@@ -82,6 +82,7 @@ request_body_in_memory_limit = 131072
 | `detect_only` | bool | false | Default log-only verdict for request and response inspection |
 | `transaction_ttl_ms` | int | 10000 | TTL for cached transactions |
 | `max_cached_transactions` | int | 1024 | Hard cap on response-correlation transactions; requests fail closed when full |
+| `include_crs_control_rule_hits` | bool | false | Include OWASP_CRS-tagged matches without severity in `plugin_coraza_rule_hits_total`. Custom rules without that tag, rules with severity, and the rule supplying the verdict always count. |
 | `rule_match_log` | bool | false | Emit a warning per matched rule; disabled by default to avoid log amplification |
 | `matched_data_log` | string | `none` | Matched-data logging mode: `none`, `hash`, or bounded `truncate` |
 | `matched_data_max_bytes` | int | 128 | Bound for truncated logs and exposed matched data |

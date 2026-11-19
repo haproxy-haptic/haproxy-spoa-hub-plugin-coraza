@@ -23,6 +23,7 @@ fn setup_waf() -> u64 {
             0,
             0,
             128,
+            0, // include_crs_control_rule_hits
         )
     }
 }

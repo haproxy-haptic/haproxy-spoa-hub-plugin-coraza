@@ -43,7 +43,7 @@ func FuzzAppendMatchedRulesJSON(f *testing.F) {
 			rules = append(rules, fuzzMatch{rule: fuzzRule{id: id, severity: severity}})
 			data = data[16:]
 		}
-		got := string(appendMatchedRulesJSON(nil, rules))
+		got := string(appendMatchedRulesJSON(nil, rules, true, 0))
 		if want := legacyMatchedRulesJSON(rules); got != want {
 			t.Fatalf("encoder %q, encoding/json %q", got, want)
 		}

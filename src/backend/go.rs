@@ -170,6 +170,7 @@ pub(crate) fn create_waf(
             i32::from(config.rule_match_log),
             config.matched_data_log.ffi_value(),
             config.matched_data_max_bytes,
+            i32::from(config.include_crs_control_rule_hits),
         )
     };
 

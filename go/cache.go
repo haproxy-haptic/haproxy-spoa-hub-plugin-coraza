@@ -9,9 +9,10 @@ import (
 )
 
 type cachedTx struct {
-	tx        types.Transaction
-	wafHandle uint64
-	expiresAt time.Time
+	tx                        types.Transaction
+	wafHandle                 uint64
+	includeCRSControlRuleHits bool
+	expiresAt                 time.Time
 }
 
 var (
@@ -77,7 +78,11 @@ func closeCachedTransactions(entries []*cachedTx) {
 // retaining its originating WAF generation. The global cache is hard-capped;
 // callers fail closed if capacity is exhausted.
 func cacheTransaction(id string, tx types.Transaction, wafHandle uint64, ttl time.Duration, maxEntries int) bool {
-	if ttl <= 0 || maxEntries <= 0 || !retainWAF(wafHandle) {
+	if ttl <= 0 || maxEntries <= 0 {
+		return false
+	}
+	waf := retainWAF(wafHandle)
+	if waf == nil {
 		return false
 	}
 	startCacheEvictor()
@@ -99,9 +104,10 @@ func cacheTransaction(id string, tx types.Transaction, wafHandle uint64, ttl tim
 	}
 	replaced = txCache[id]
 	txCache[id] = &cachedTx{
-		tx:        tx,
-		wafHandle: wafHandle,
-		expiresAt: time.Now().Add(ttl),
+		tx:                        tx,
+		wafHandle:                 wafHandle,
+		includeCRSControlRuleHits: waf.includeCRSControlRuleHits,
+		expiresAt:                 time.Now().Add(ttl),
 	}
 	txCacheMu.Unlock()
 

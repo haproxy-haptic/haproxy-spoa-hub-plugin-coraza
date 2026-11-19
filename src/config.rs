@@ -69,6 +69,7 @@ pub struct PluginConfig {
     pub transaction_ttl_ms: i32,
     pub max_cached_transactions: i32,
     pub rule_match_log: bool,
+    pub include_crs_control_rule_hits: bool,
     pub matched_data_log: MatchedDataLog,
     pub matched_data_max_bytes: i32,
     pub expose_matched_data: bool,
@@ -220,6 +221,7 @@ impl Default for PluginConfig {
             transaction_ttl_ms: 10000,
             max_cached_transactions: 1024,
             rule_match_log: false,
+            include_crs_control_rule_hits: false,
             matched_data_log: MatchedDataLog::None,
             matched_data_max_bytes: 128,
             expose_matched_data: false,
@@ -397,6 +399,10 @@ impl PluginConfig {
             transaction_ttl_ms,
             max_cached_transactions,
             rule_match_log,
+            include_crs_control_rule_hits: context
+                .get_config("include_crs_control_rule_hits")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(defaults.include_crs_control_rule_hits),
             matched_data_log,
             matched_data_max_bytes,
             expose_matched_data,
@@ -477,6 +483,11 @@ impl PluginConfig {
                     "type": "boolean",
                     "default": false,
                     "description": "Emit one structured warning for each matched rule. Disabled by default to prevent payload leakage and log-amplification attacks."
+                },
+                "include_crs_control_rule_hits": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Count OWASP_CRS-tagged matches without severity in rule_hits_total. The rule supplying the verdict is always counted."
                 },
                 "matched_data_log": {
                     "type": "string",

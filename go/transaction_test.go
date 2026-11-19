@@ -14,7 +14,7 @@ Include @coraza.conf-recommended
 Include @crs-setup.conf.example
 Include @owasp_crs/*.conf`
 
-	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128)
+	handle, _, err := createWAF(directives, "", "", 4096, 4096, 4096, false, matchedDataNone, 128, false)
 	if err != nil {
 		t.Fatalf("setupTestWAF: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestMatchedRulesJSON(t *testing.T) {
 	tx.ProcessRequestHeaders()
 	tx.ProcessRequestBody()
 
-	raw := string(appendMatchedRulesJSON(nil, tx.MatchedRules()))
+	raw := string(appendMatchedRulesJSON(nil, tx.MatchedRules(), false, 0))
 	if raw == "" {
 		t.Fatal("expected matched_rules JSON for a SQLi transaction, got empty")
 	}
@@ -283,7 +283,19 @@ func TestMatchedRulesJSON(t *testing.T) {
 }
 
 func TestMatchedRulesJSON_NoHitsIsEmpty(t *testing.T) {
-	if got := string(appendMatchedRulesJSON(nil, nil)); got != "" {
+	if got := string(appendMatchedRulesJSON(nil, nil, false, 0)); got != "" {
 		t.Errorf("expected empty string for no matched rules, got %q", got)
+	}
+}
+
+func TestCleanCRSRequestsHaveNoRuleHitPayload(t *testing.T) {
+	rules := benignMatchedRules(t)
+	if len(rules) == 0 {
+		t.Fatal("expected the CRS setup and control rules to match")
+	}
+	raw := matchedRulesJSON(rules, false, 0)
+	if raw != nil {
+		defer coraza_free_string(raw)
+		t.Errorf("unexpected default rule hit payload: %s", goString(raw))
 	}
 }

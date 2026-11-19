@@ -20,10 +20,11 @@ import (
 
 // wafInstance holds a compiled WAF and its metadata.
 type wafInstance struct {
-	waf                coraza.WAF
-	rulesCount         int
-	activeTransactions int
-	retiring           bool
+	waf                       coraza.WAF
+	rulesCount                int
+	activeTransactions        int
+	includeCRSControlRuleHits bool
+	retiring                  bool
 }
 
 var (
@@ -80,6 +81,7 @@ func createWAF(
 	reqBodyLimit, reqBodyMemLimit, respBodyLimit int,
 	ruleMatchLog bool,
 	matchedDataLogMode, matchedDataMaxBytes int,
+	includeCRSControlRuleHits bool,
 ) (uint64, int, error) {
 	config := coraza.NewWAFConfig()
 
@@ -156,8 +158,9 @@ func createWAF(
 
 	wafMu.Lock()
 	wafHandles[id] = &wafInstance{
-		waf:        waf,
-		rulesCount: rulesCount,
+		waf:                       waf,
+		rulesCount:                rulesCount,
+		includeCRSControlRuleHits: includeCRSControlRuleHits,
 	}
 	wafMu.Unlock()
 
@@ -179,15 +182,15 @@ func getWAF(handle uint64) (*wafInstance, error) {
 }
 
 // retainWAF pins a handle while a request transaction waits for its response.
-func retainWAF(handle uint64) bool {
+func retainWAF(handle uint64) *wafInstance {
 	wafMu.Lock()
 	defer wafMu.Unlock()
 	inst, ok := wafHandles[handle]
 	if !ok || inst.retiring {
-		return false
+		return nil
 	}
 	inst.activeTransactions++
-	return true
+	return inst
 }
 
 func closeWAF(inst *wafInstance) {

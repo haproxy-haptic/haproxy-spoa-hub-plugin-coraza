@@ -9,8 +9,8 @@ pub struct CorazaResult {
     pub data: *const c_char,
     pub anomaly_score: c_int,
     pub rules_hit: c_int,
-    /// Compact JSON array of every matched rule ([{"i":id,"s":severity}]).
-    /// Null when no rules matched. Heap-allocated Go-side; freed via
+    /// Compact JSON array of matches selected for rule hit metrics ([{"i":id,"s":severity}]).
+    /// Null when no hits were selected. Heap-allocated Go-side; freed via
     /// `free_matched_rules`.
     pub matched_rules: *const c_char,
     /// Name of the request field a rule matched on (`VARIABLE` or
@@ -33,6 +33,7 @@ unsafe extern "C" {
         rule_match_log: c_int,
         matched_data_log_mode: c_int,
         matched_data_max_bytes: c_int,
+        include_crs_control_rule_hits: c_int,
     ) -> u64;
 
     pub fn coraza_waf_rules_count(waf: u64) -> c_int;
