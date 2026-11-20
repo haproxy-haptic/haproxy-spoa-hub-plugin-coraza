@@ -1,6 +1,6 @@
 [package]
 name = "coraza-plugin"
-version = "0.12.0-rc.5"
+version = "0.12.0-rc.6"
 edition = "2024"
 rust-version = "1.86"
 description = "Coraza WAF plugin for haproxy-spoa-hub"
@@ -12,12 +12,13 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["go-backend"]
 go-backend = []
-rust-backend = ["dep:zentinel-modsec", "dep:tempfile", "dep:tar", "dep:flate2", "dep:sha2", "dep:tracing", "dep:tracing-subscriber", "dep:regex", "dep:chrono"]
+rust-backend = ["dep:ahash", "dep:zentinel-modsec", "dep:tempfile", "dep:tar", "dep:flate2", "dep:sha2", "dep:tracing", "dep:tracing-subscriber", "dep:regex", "dep:chrono"]
 
 [dependencies]
+ahash = { version = "0.8", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
 regex = { version = "1", optional = true }
-zentinel-modsec = { git = "https://github.com/haproxy-haptic/zentinel-modsec", rev = "92e59c26434736bbc65c41b25cb267d47e788932", default-features = false, optional = true }
+zentinel-modsec = { git = "https://github.com/haproxy-haptic/zentinel-modsec", rev = "5a98bdb7fa76bb8cee8e9a943c57d819080d794c", default-features = false, optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"], optional = true }
 tempfile = { version = "3", optional = true }

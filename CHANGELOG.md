@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.12.0-rc.6] - 2026-11-20
+
+- The Rust WAF compiles macro operands once, uses faster keyed lookups, and avoids allocating rule IDs, ignored match names, and keyword lookup strings during request evaluation.
+
 ## [0.12.0-rc.5] - 2026-11-20
 
 - The SPOE `rules_hit` count now follows the same CRS control-rule filter as `plugin_coraza_rule_hits_total` on both backends.

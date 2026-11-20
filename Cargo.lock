@@ -180,7 +180,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 [[package]]
 name = "barbacane-libinjection"
 version = "0.1.3"
-source = "git+https://github.com/haproxy-haptic/zentinel-modsec?rev=92e59c26434736bbc65c41b25cb267d47e788932#92e59c26434736bbc65c41b25cb267d47e788932"
+source = "git+https://github.com/haproxy-haptic/zentinel-modsec?rev=5a98bdb7fa76bb8cee8e9a943c57d819080d794c#5a98bdb7fa76bb8cee8e9a943c57d819080d794c"
 dependencies = [
  "bitflags",
  "serde_json",
@@ -369,8 +369,9 @@ dependencies = [
 
 [[package]]
 name = "coraza-plugin"
-version = "0.12.0-rc.5"
+version = "0.12.0-rc.6"
 dependencies = [
+ "ahash",
  "chrono",
  "criterion",
  "flate2",
@@ -2178,8 +2179,9 @@ dependencies = [
 [[package]]
 name = "zentinel-modsec"
 version = "0.6.0"
-source = "git+https://github.com/haproxy-haptic/zentinel-modsec?rev=92e59c26434736bbc65c41b25cb267d47e788932#92e59c26434736bbc65c41b25cb267d47e788932"
+source = "git+https://github.com/haproxy-haptic/zentinel-modsec?rev=5a98bdb7fa76bb8cee8e9a943c57d819080d794c#5a98bdb7fa76bb8cee8e9a943c57d819080d794c"
 dependencies = [
+ "ahash",
  "aho-corasick",
  "barbacane-libinjection",
  "base64",
