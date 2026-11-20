@@ -64,7 +64,7 @@ struct RuleInfo {
 
 #[derive(Debug)]
 pub(crate) struct RuleCatalog {
-    rules: HashMap<String, RuleInfo>,
+    rules: HashMap<String, RuleInfo, ahash::RandomState>,
     pub(super) log_matches: bool,
     data_log: MatchedDataLog,
     data_limit: i32,
@@ -72,7 +72,7 @@ pub(crate) struct RuleCatalog {
 
 impl RuleCatalog {
     pub(crate) fn new(engine: &ModSecurity, config: &PluginConfig) -> Self {
-        let mut rules = HashMap::new();
+        let mut rules = HashMap::default();
         for phase in Phase::ALL {
             for rule in engine.ruleset().rules_for_phase(phase) {
                 let Some(name) = &rule.id else { continue };
@@ -118,21 +118,26 @@ impl RuleCatalog {
 
     pub(super) fn configure_reporting(&self, tx: &mut Transaction) {
         tx.set_source_qualified_argument_names(true);
-        tx.record_matched_fields(MAX_MATCHED_FIELDS, request_field);
+        tx.record_filtered_matched_fields(MAX_MATCHED_FIELDS, is_request_field, |name| {
+            Some(
+                name.strip_suffix(':')
+                    .filter(|prefix| !prefix.contains(':'))
+                    .unwrap_or(name),
+            )
+        });
         tx.set_record_rule_messages(self.log_matches);
     }
 
     pub(super) fn result(&self, tx: &Transaction, expose_data: bool, limit: i32) -> Evaluation {
         let mut result = Evaluation::allow();
-        let matched = tx.matched_rules();
-        result.rules_hit = matched.len() as i32;
         let interruption = tx.intervention();
         result.rule_id = interruption
             .and_then(|i| i.rule_ids.first())
             .and_then(|id| id.parse().ok())
             .unwrap_or(0);
         let mut json = String::new();
-        for id in matched {
+        for id in tx.matched_rule_ids() {
+            result.rules_hit = result.rules_hit.saturating_add(1);
             let Some(info) = self.rules.get(id) else {
                 continue;
             };
@@ -229,7 +234,7 @@ impl RuleCatalog {
 
 const MAX_MATCHED_FIELDS: usize = 5;
 
-fn request_field(name: &str) -> Option<&str> {
+fn is_request_field(name: &[u8]) -> bool {
     const INPUTS: &[&str] = &[
         "ARGS",
         "REQUEST_HEADERS",
@@ -247,11 +252,9 @@ fn request_field(name: &str) -> Option<&str> {
         "XML",
         "JSON",
     ];
-    let (collection, key) = name.split_once(':').unwrap_or((name, ""));
     INPUTS
         .iter()
-        .any(|prefix| collection.starts_with(prefix))
-        .then_some(if key.is_empty() { collection } else { name })
+        .any(|prefix| name.starts_with(prefix.as_bytes()))
 }
 
 fn bounded(bytes: &[u8], limit: i32) -> String {
