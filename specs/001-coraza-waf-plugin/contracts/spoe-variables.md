@@ -34,7 +34,7 @@ All variables are scoped to `txn` and namespaced by the hub as `hub.<plugin_name
 | `status` | int | HTTP status code; a `drop` action is disruptive despite status 0 |
 | `rule_id` | int | ID of the rule that triggered deny (0=allow) |
 | `anomaly_score` | int | Accumulated anomaly score |
-| `rules_hit` | int | Number of rules that matched |
+| `rules_hit` | int | Number of request matches counted by the per-rule metric, subject to `include_crs_control_rule_hits` |
 | `data` | string | Bounded interruption data; omitted unless `expose_matched_data=true` |
 
 ## SPOE Message: `check-response`

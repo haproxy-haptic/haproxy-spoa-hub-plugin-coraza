@@ -82,7 +82,7 @@ request_body_in_memory_limit = 131072
 | `detect_only` | bool | false | Default log-only verdict for request and response inspection |
 | `transaction_ttl_ms` | int | 10000 | TTL for cached transactions |
 | `max_cached_transactions` | int | 1024 | Hard cap on response-correlation transactions; requests fail closed when full |
-| `include_crs_control_rule_hits` | bool | false | Include OWASP_CRS-tagged matches without severity in `plugin_coraza_rule_hits_total`. Custom rules without that tag, rules with severity, and the rule supplying the verdict always count. |
+| `include_crs_control_rule_hits` | bool | false | Include OWASP_CRS-tagged matches without severity in `rules_hit` and `plugin_coraza_rule_hits_total`. Custom rules without that tag, rules with severity, and the rule supplying the verdict always count. |
 | `rule_match_log` | bool | false | Emit a warning per matched rule; disabled by default to avoid log amplification |
 | `matched_data_log` | string | `none` | Matched-data logging mode: `none`, `hash`, or bounded `truncate` |
 | `matched_data_max_bytes` | int | 128 | Bound for truncated logs and exposed matched data |
@@ -121,7 +121,7 @@ The plugin sets these variables in HAProxy (prefixed with `hub.<plugin_name>.`):
 | `status` | int | HTTP status code; `drop` is disruptive even though its status is 0 |
 | `rule_id` | int | Matched rule ID |
 | `anomaly_score` | int | CRS anomaly score |
-| `rules_hit` | int | Number of matched rules |
+| `rules_hit` | int | Number of request matches counted by `plugin_coraza_rule_hits_total`, including CRS control rules when configured |
 | `rule_ids` | string | Comma-separated IDs of the matched rules that carry a severity (the anomaly score's rules), most severe first, at most 10; absent when none matched |
 | `data` | string | Bounded interruption data; absent unless `expose_matched_data=true` |
 

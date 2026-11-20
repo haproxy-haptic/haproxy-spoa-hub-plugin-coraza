@@ -487,7 +487,7 @@ impl PluginConfig {
                 "include_crs_control_rule_hits": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Count OWASP_CRS-tagged matches without severity in rule_hits_total. The rule supplying the verdict is always counted."
+                    "description": "Count OWASP_CRS-tagged matches without severity in rules_hit and rule_hits_total. The rule supplying the verdict is always counted."
                 },
                 "matched_data_log": {
                     "type": "string",

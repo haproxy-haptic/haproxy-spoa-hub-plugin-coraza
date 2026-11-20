@@ -672,7 +672,7 @@ fn result_to_variables(
 
         vars.push(TxnVariable::transaction(
             "rules_hit",
-            SpoeValue::Int32(result.rules_hit),
+            SpoeValue::Int32(i32::try_from(hits.len()).unwrap_or(i32::MAX)),
         ));
 
         // The scoring rules behind the verdict, e.g. "930130,920420": rule
@@ -1670,8 +1670,8 @@ mod reload_tests {
         METRICS.install(collect, std::ptr::null());
         let directives = r#"SecRuleEngine On
 SecAction "id:1,phase:1,pass,nolog,tag:OWASP_CRS"
-SecAction "id:2,phase:1,pass,nolog,severity:INFO,tag:OWASP_CRS"
-SecAction "id:3,phase:1,pass,nolog"
+SecRule REQUEST_URI "@streq /test" "id:2,phase:1,pass,nolog,severity:INFO,tag:OWASP_CRS"
+SecRule REQUEST_URI "@streq /test" "id:3,phase:1,pass,nolog"
 SecRule REQUEST_URI "@streq /test" "id:4,phase:1,deny,status:403,tag:OWASP_CRS"
 "#;
         for include_controls in [false, true] {
@@ -1684,23 +1684,28 @@ SecRule REQUEST_URI "@streq /test" "id:4,phase:1,deny,status:403,tag:OWASP_CRS"
             }
             let mut plugin = CorazaPlugin::__new();
             plugin.__init(&context).unwrap();
-            let mut request = make_app_request("/test", APP);
-            request
-                .args
-                .insert("detect-only".into(), SpoeValue::Bool(true));
-            let verdict = plugin.__process(&request).unwrap();
-            assert!(matches!(find_var(&verdict, "rule_id"), SpoeValue::Int32(4)));
-            assert!(matches!(
-                find_var(&verdict, "rules_hit"),
-                SpoeValue::Int32(4)
-            ));
-            let hits = std::mem::take(&mut *HITS.lock().unwrap());
-            let expected = if include_controls {
-                &["1", "2", "3", "4"][..]
+            let clean_hits: &[&str] = if include_controls { &["1"] } else { &[] };
+            let detection_hits: &[&str] = if include_controls {
+                &["1", "2", "3", "4"]
             } else {
-                &["2", "3", "4"][..]
+                &["2", "3", "4"]
             };
-            assert_eq!(hits, expected);
+            for (uri, rule_id, expected) in
+                [("/clean", 0, clean_hits), ("/test", 4, detection_hits)]
+            {
+                let mut request = make_app_request(uri, APP);
+                request
+                    .args
+                    .insert("detect-only".into(), SpoeValue::Bool(true));
+                let verdict = plugin.__process(&request).unwrap();
+                assert!(
+                    matches!(find_var(&verdict, "rule_id"), SpoeValue::Int32(id) if *id == rule_id)
+                );
+                assert!(
+                    matches!(find_var(&verdict, "rules_hit"), SpoeValue::Int32(n) if *n == expected.len() as i32)
+                );
+                assert_eq!(std::mem::take(&mut *HITS.lock().unwrap()), expected);
+            }
         }
     }
 
