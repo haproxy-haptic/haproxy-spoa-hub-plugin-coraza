@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The SPOE `rules_hit` count now follows the same CRS control-rule filter as `plugin_coraza_rule_hits_total` on both backends.
+
 ## [0.12.0-rc.4] - 2026-11-19
 
 - The Rust backend matches Go Coraza's ASCII word boundaries, XML namespace attribute classification, and parse-error reporting for malformed XML and multipart request bodies.
