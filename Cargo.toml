@@ -1,6 +1,6 @@
 [package]
 name = "coraza-plugin"
-version = "0.12.0-rc.7"
+version = "0.12.0-rc.8"
 edition = "2024"
 rust-version = "1.86"
 description = "Coraza WAF plugin for haproxy-spoa-hub"
@@ -18,7 +18,7 @@ rust-backend = ["dep:ahash", "dep:zentinel-modsec", "dep:tempfile", "dep:tar", "
 ahash = { version = "0.8", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
 regex = { version = "1", optional = true }
-zentinel-modsec = { git = "https://github.com/haproxy-haptic/zentinel-modsec", rev = "8ca606100e87e7d3ed3e7742cdc60c70ca161826", default-features = false, optional = true }
+zentinel-modsec = { git = "https://github.com/haproxy-haptic/zentinel-modsec", rev = "bb599230717628a56719e00654f6565143261e9f", default-features = false, optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"], optional = true }
 tempfile = { version = "3", optional = true }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.8] - 2026-11-20
+
+- The Rust engine reuses bounded transformations across rules and reduces rule-ID and libinjection keyword lookup costs.
+
 ## [0.12.0-rc.7] - 2026-11-20
 
 - The Rust engine reduces request-time allocation for macro expansion, TX and audit bookkeeping, and whitespace and comment transformations.
