@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.7] - 2026-11-20
+
+- The Rust engine reduces request-time allocation for macro expansion, TX and audit bookkeeping, and whitespace and comment transformations.
+
 ## [0.12.0-rc.6] - 2026-11-20
 
 - The Rust WAF compiles macro operands once, uses faster keyed lookups, and avoids allocating rule IDs, ignored match names, and keyword lookup strings during request evaluation.
