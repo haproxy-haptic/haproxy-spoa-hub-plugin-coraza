@@ -27,7 +27,7 @@ PGO_DRIVER ?= .pgo-tools/scripts/pgo/build.sh
 build-profiled-backends:
 	test -n "$(RUST_TARGET)"
 	mkdir -p "$(GO_TARGET_DIR)"
-	cd go && go test -pgo=off -run '^$$' -bench '^BenchmarkEvaluationPlugin$$' -benchtime=5s -tags "$(GO_TAGS)" -cpuprofile "$(abspath $(GO_TARGET_DIR))/evaluation.pprof" -o "$(abspath $(GO_TARGET_DIR))/evaluation.test" .
+	cd go && go test -pgo=off -run '^$$' -bench '^BenchmarkReleaseProfile$$' -benchtime=5s -tags "$(GO_TAGS)" -cpuprofile "$(abspath $(GO_TARGET_DIR))/evaluation.pprof" -o "$(abspath $(GO_TARGET_DIR))/evaluation.test" .
 	GOFLAGS="$(GOFLAGS) -pgo=$(abspath $(GO_TARGET_DIR))/evaluation.pprof" CARGO_TARGET_DIR="$(GO_TARGET_DIR)" $(PGO_DRIVER) "$(RUST_TARGET)" --no-default-features --features go-backend
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" $(PGO_DRIVER) "$(RUST_TARGET)" --no-default-features --features rust-backend
 	$(MAKE) stage-backends

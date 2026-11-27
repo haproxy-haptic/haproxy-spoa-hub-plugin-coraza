@@ -35,6 +35,21 @@ Each architecture supplies two libraries. Install `libcoraza_plugin-<arch>-glibc
 To exercise build, signing, and verification without publishing, run the
 `release` workflow manually with `dry_run` enabled.
 
+## Release profiles
+
+Every release build trains the two instrumented Rust variants separately. The
+pinned hub driver reads `ci/pgo/plugins.toml` and `ci/pgo/requests.json` from
+this repository, loads the library, and checks its SPOP responses. Each target
+then rebuilds with its own LLVM counters. Both final libraries must contain the
+cargo-auditable dependency section before packaging.
+
+For the Go engine, the build also records a fresh CPU profile on the native
+build host. `BenchmarkReleaseProfile` calls the exported request evaluator with
+nine ordinary requests per denied request against the default core rules.
+The Go compiler uses those samples when compiling the target archive, including
+during ARM cross builds. Update the benchmark and fixtures when traffic paths
+change.
+
 ## Verifying a release
 
 After CI finishes, verify the release end-to-end from a clean machine:

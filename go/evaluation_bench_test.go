@@ -131,6 +131,27 @@ func BenchmarkEvaluationPlugin(b *testing.B) {
 	}
 }
 
+// BenchmarkReleaseProfile exercises both verdict paths while generating the
+// release CPU profile. Keep the latency comparison benches above independent.
+func BenchmarkReleaseProfile(b *testing.B) {
+	handle := newChartWAF(b)
+	defer destroyWAF(handle)
+	allowed := newCRequest(benignRequest)
+	deniedRequest := benignRequest
+	deniedRequest.method = "TRACE"
+	denied := newCRequest(deniedRequest)
+	for i := 0; b.Loop(); i++ {
+		request, status := allowed, 0
+		if i%10 == 9 {
+			request, status = denied, 403
+		}
+		result := evalPlugin(handle, request, strconv.Itoa(i))
+		if int(result.status) != status {
+			b.Fatalf("expected status %d, got %d", status, result.status)
+		}
+	}
+}
+
 // threadCPU is the calling OS thread's CPU time. Unlike wall time it does not
 // grow when other load on the machine deschedules the thread.
 func threadCPU() time.Duration {
