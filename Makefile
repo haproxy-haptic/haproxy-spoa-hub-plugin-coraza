@@ -19,6 +19,20 @@ RELEASE_DIR = $(if $(RUST_TARGET),$(RUST_TARGET)/)release
 build-backends:
 	$(CARGO) build --locked --release $(TARGET_FLAG) --target-dir "$(GO_TARGET_DIR)" --no-default-features --features go-backend
 	$(CARGO) build --locked --release $(TARGET_FLAG) --target-dir "$(RUST_TARGET_DIR)" --no-default-features --features rust-backend
+	$(MAKE) stage-backends
+
+# The Go compiler consumes a native CPU profile, including for cross builds.
+.PHONY: build-profiled-backends stage-backends
+PGO_DRIVER ?= .pgo-tools/scripts/pgo/build.sh
+build-profiled-backends:
+	test -n "$(RUST_TARGET)"
+	mkdir -p "$(GO_TARGET_DIR)"
+	cd go && go test -pgo=off -run '^$$' -bench '^BenchmarkReleaseProfile$$' -benchtime=5s -tags "$(GO_TAGS)" -cpuprofile "$(abspath $(GO_TARGET_DIR))/evaluation.pprof" -o "$(abspath $(GO_TARGET_DIR))/evaluation.test" .
+	GOFLAGS="$(GOFLAGS) -pgo=$(abspath $(GO_TARGET_DIR))/evaluation.pprof" CARGO_TARGET_DIR="$(GO_TARGET_DIR)" $(PGO_DRIVER) "$(RUST_TARGET)" --no-default-features --features go-backend
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" $(PGO_DRIVER) "$(RUST_TARGET)" --no-default-features --features rust-backend
+	$(MAKE) stage-backends
+
+stage-backends:
 	install -D -m 755 "$(GO_TARGET_DIR)/$(RELEASE_DIR)/libcoraza_plugin.so" "$(BUNDLE_DIR)/libcoraza_plugin.so"
 	install -D -m 755 "$(RUST_TARGET_DIR)/$(RELEASE_DIR)/libcoraza_plugin.so" "$(BUNDLE_DIR)/libcoraza_rust_plugin.so"
 
