@@ -1,0 +1,38 @@
+[
+  {
+    "message": "check-request",
+    "args": {
+      "src-ip": "192.0.2.1",
+      "dst-ip": "192.0.2.2",
+      "src-port": 42000,
+      "dst-port": 443,
+      "method": "GET",
+      "path": "/catalog",
+      "version": "HTTP/1.1",
+      "headers": {
+        "hex": "486f73743a2073686f702e6578616d706c650d0a"
+      }
+    },
+    "expect": {
+      "coraza.action": "allow"
+    }
+  },
+  {
+    "message": "check-request",
+    "args": {
+      "src-ip": "192.0.2.1",
+      "dst-ip": "192.0.2.2",
+      "src-port": 42000,
+      "dst-port": 443,
+      "method": "GET",
+      "path": "/restricted",
+      "version": "HTTP/1.1",
+      "headers": {
+        "hex": "486f73743a2073686f702e6578616d706c650d0a"
+      }
+    },
+    "expect": {
+      "coraza.action": "deny"
+    }
+  }
+]

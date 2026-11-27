@@ -1,0 +1,9 @@
+[[plugins]]
+name = "coraza"
+library = "libcoraza_plugin.so"
+messages = ["check-request"]
+[plugins.params]
+directives = """
+SecRuleEngine On
+SecRule REQUEST_URI "@streq /restricted" "id:10101,phase:1,deny,status:403"
+"""

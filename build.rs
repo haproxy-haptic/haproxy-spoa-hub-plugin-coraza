@@ -67,6 +67,8 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=resolv");
     }
 
+    println!("cargo:rerun-if-env-changed=GOFLAGS");
+
     // Rerun if Go sources change
     println!("cargo:rerun-if-changed=go/");
     for entry in std::fs::read_dir(&go_dir).expect("Failed to read go/ directory") {
