@@ -4,6 +4,9 @@ library = "libcoraza_plugin.so"
 messages = ["check-request"]
 [plugins.params]
 directives = """
+Include @coraza.conf-recommended
+Include @crs-setup.conf.example
+Include @owasp_crs/*.conf
 SecRuleEngine On
 SecRule REQUEST_URI "@streq /restricted" "id:10101,phase:1,deny,status:403"
 """
