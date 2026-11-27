@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.0-rc.9] - 2026-11-27
+
+### Changed
+
+- Release builds train profile-guided optimization on SPOE requests for AMD64, ARM64 and ARMv7. Both WAF backends are trained, with a separate CPU profile for the Go engine.
+
 ## [0.12.0-rc.8] - 2026-11-20
 
 - The Rust engine reuses bounded transformations across rules and reduces rule-ID and libinjection keyword lookup costs.
